@@ -402,68 +402,59 @@ func start_match() -> void:
 	var screen_width = get_viewport_rect().size.x
 	var screen_height = get_viewport_rect().size.y
 	
-	player1 = CharacterBody2D.new()
-	player1.set_script(preload("res://Player.gd"))
-	add_child(player1)
-	player1.position = Vector2(120, screen_height / 2)
+	# Preload the scene instead of a script
+	var player_scene = preload("res://Player.tscn")
 	
-	var p1_is_bot = false
-	player1.setup_player(1, p1_is_bot, p1_selected_character, p1_selected_skill)
-	player1.lives = starting_lives_setting
-	
-	if multiplayer.multiplayer_peer != null:
-		player1.set_multiplayer_authority(1) 
-	
-	var p1_visual = ColorRect.new()
-	p1_visual.size = Vector2(40, 80)
-	p1_visual.position = Vector2(-20, -40)
-	p1_visual.color = Color(0.2, 0.6, 1.0)
-	player1.add_child(p1_visual)
-	
-	var p1_collider = CollisionShape2D.new()
-	var p1_box = RectangleShape2D.new()
-	p1_box.size = Vector2(40, 80)
-	p1_collider.shape = p1_box
-	player1.add_child(p1_collider)
-	
-	player2 = CharacterBody2D.new()
-	player2.set_script(preload("res://Player.gd"))
-	add_child(player2)
-	player2.position = Vector2(screen_width - 120, screen_height / 2)
-	
-	var p2_is_bot = vs_ai_mode
-	player2.setup_player(2, p2_is_bot, p2_selected_character, p2_selected_skill)
-	player2.lives = starting_lives_setting
-	
-	if multiplayer.multiplayer_peer != null:
-		var client_peer_id = multiplayer.get_peers()[0] 
-		player2.set_multiplayer_authority(client_peer_id if not multiplayer.is_server() else 1)
+	# ONLY THE HOST/SERVER SPAWNS THE PHYSICAL NODES
+	if multiplayer.is_server() or multiplayer.multiplayer_peer == null:
+		# --- SPAWN PLAYER 1 ---
+		player1 = player_scene.instantiate()
+		player1.name = "Player1"
+		add_child(player1) # MultiplayerSpawner automatically duplicates this to the guest!
+		player1.position = Vector2(120, screen_height / 2)
+		player1.setup_player(1, false, p1_selected_character, p1_selected_skill)
+		player1.lives = starting_lives_setting
+		
+		if multiplayer.multiplayer_peer != null:
+			player1.set_multiplayer_authority(1)
+			# Add synchronizer
+			var sync1 = MultiplayerSynchronizer.new()
+			var config1 = SceneReplicationConfig.new()
+			config1.add_property(^":position")
+			sync1.replication_config = config1
+			player1.add_child(sync1)
 
-
-	var p2_visual = ColorRect.new()
-	p2_visual.size = Vector2(40, 80)
-	p2_visual.position = Vector2(-20, -40)
-	p2_visual.color = Color(1.0, 0.3, 0.3)
-	player2.add_child(p2_visual)
+		# --- SPAWN PLAYER 2 ---
+		player2 = player_scene.instantiate()
+		player2.name = "Player2"
+		add_child(player2) # MultiplayerSpawner automatically duplicates this to the guest!
+		player2.position = Vector2(screen_width - 120, screen_height / 2)
+		player2.setup_player(2, vs_ai_mode, p2_selected_character, p2_selected_skill)
+		player2.lives = starting_lives_setting
+		
+		if multiplayer.multiplayer_peer != null:
+			var client_peer_id = multiplayer.get_peers()[0]
+			player2.set_multiplayer_authority(client_peer_id)
+			# Add synchronizer
+			var sync2 = MultiplayerSynchronizer.new()
+			var config2 = SceneReplicationConfig.new()
+			config2.add_property(^":position")
+			sync2.replication_config = config2
+			player2.add_child(sync2)
+	# --- ALL MACHINES RUN CODE BELOW (HUD, Visuals, Map) ---
+	# Note: If your setup_player() function handles adding the ColorRect and Colliders, 
+	# make sure it runs inside the Player.gd's _ready() function so the guest gets visuals too!
 	
-	var p2_collider = CollisionShape2D.new()
-	var p2_box = RectangleShape2D.new()
-	p2_box.size = Vector2(40, 80)
-	p2_collider.shape = p2_box
-	player2.add_child(p2_collider)
-	
-	# --- FIXED: SYNCHRONIZED ARENA SEED MAP LAYER ---
-	# Only the Host server computes the positions of the rock walls!
 	if multiplayer.multiplayer_peer == null or multiplayer.is_server():
 		var min_obs = 3 if selected_map == "Standard Field" else 6
 		var max_obs = 5 if selected_map == "Standard Field" else 9
-		
 		if selected_map != "Open Empty Plain":
 			generate_and_sync_obstacles(screen_width, screen_height, min_obs, max_obs)
 	
 	setup_hud(screen_width)
 	game_active = true
 	queue_redraw()
+
 
 # NEW RPC ENGINE: Broadcasts the exact obstacle coordinates from the host PC down to the Guest
 func generate_and_sync_obstacles(screen_width: float, screen_height: float, min_c: int, max_c: int) -> void:
@@ -592,6 +583,15 @@ func _process(_delta: float) -> void:
 		p2_hud_label.text = skill_info + ammo_info + " | P2 Lives: " + str(player2.lives) + " | HP: " + str(player2.current_health) + "/" + str(player2.max_health) + " ❤️  "
 		p2_ability_bar.value = player2.get_ability_cooldown_percentage() * 100.0
 		for i in range(3): p2_bars[i].value = player2.get_individual_bar_progress(i) * 100.0
+		
+		
+	################## For debugging - checks guest input#########################
+	############################DELETE LATER######################################
+	if multiplayer.multiplayer_peer != null and multiplayer.is_server():
+		# Check if player2 exists before trying to print its position
+		if has_node("CharacterBody2D") or is_instance_valid(player2):
+			print("Host Node - Guest Player Position: ", player2.position)
+	##################################################################################
 
 func spawn_hit_particles(hit_position: Vector2, particle_color: Color) -> void:
 	var particles = CPUParticles2D.new()
