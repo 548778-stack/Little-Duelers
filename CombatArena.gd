@@ -436,8 +436,9 @@ func start_match() -> void:
 	player2.lives = starting_lives_setting
 	
 	if multiplayer.multiplayer_peer != null:
-		var client_peer_id = multiplayer.get_peers() if multiplayer.get_peers().size() > 0 else 1
+		var client_peer_id = multiplayer.get_peers()[0] 
 		player2.set_multiplayer_authority(client_peer_id if not multiplayer.is_server() else 1)
+
 
 	var p2_visual = ColorRect.new()
 	p2_visual.size = Vector2(40, 80)

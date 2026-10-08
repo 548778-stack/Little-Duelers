@@ -1,4 +1,4 @@
-#S:\My Documents\little-duelers>
+#wdsa
 
 extends CharacterBody2D
 
