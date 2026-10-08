@@ -483,7 +483,7 @@ func generate_and_sync_obstacles(screen_width: float, screen_height: float, min_
 		# If online, broadcast these exact sizes and coordinates to the Guest PC instantly
 		if multiplayer.multiplayer_peer != null and multiplayer.is_server():
 			rpc("spawn_local_obstacle", i, pos, Vector2(b_width, b_height))
-
+			
 @rpc("any_peer", "call_remote", "reliable")
 func spawn_local_obstacle(id: int, obs_position: Vector2, obs_size: Vector2) -> void:
 	var obstacle = StaticBody2D.new()
