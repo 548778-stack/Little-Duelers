@@ -1,4 +1,3 @@
-#wdsa
 #cd "S:\My Documents\little-duelers"
 # git add .
 # git commit -m "message"
@@ -84,6 +83,12 @@ func _ready() -> void:
 	var arena = get_parent()
 	if not is_instance_valid(arena): return
 	
+	if multiplayer.multiplayer_peer != null:
+		await get_tree().process_frame
+	
+	# (Your existing arena extraction and setup logic continues here identically...)
+	if not is_instance_valid(arena): return
+
 	# Determine character specifications from our spawned name node identity
 	if name == "Player1":
 		setup_player(1, false, arena.p1_selected_character, arena.p1_selected_skill)

@@ -2,6 +2,30 @@
 
 [ext_resource type="Script" uid="uid://cw7neaq7jc423" path="res://CombatArena.gd" id="1_i26rj"]
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_i26rj"]
+bg_color = Color(0.11764706, 0.14117648, 0.18039216, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_7r1g0"]
+bg_color = Color(0.17254902, 0.19607843, 0.24705882, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_cqjrg"]
+bg_color = Color(0.22745098, 0.25882354, 0.3254902, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qoqlk"]
+bg_color = Color(0.103743605, 0.103743516, 0.103743516, 0.8)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_eiy7p"]
+bg_color = Color(0.17254902, 0.19607843, 0.24705882, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_iwfq2"]
+bg_color = Color(0.22745098, 0.25882354, 0.3254902, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_kjwba"]
+bg_color = Color(0.17254902, 0.19607843, 0.24705882, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_h7a2f"]
+bg_color = Color(0.22745098, 0.25882354, 0.3254902, 1)
+
 [node name="MainMenu" type="Control" unique_id=759196832]
 layout_mode = 3
 anchors_preset = 15
@@ -18,29 +42,81 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_i26rj")
 
 [node name="VBoxContainer" type="VBoxContainer" parent="." unique_id=964915174]
 layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -34.0
-offset_top = -41.0
-offset_right = 34.0
-offset_bottom = 41.0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+theme_override_constants/separation = 25
 
-[node name="Label" type="Label" parent="VBoxContainer" unique_id=924532175]
+[node name="Control2" type="Control" parent="VBoxContainer" unique_id=299334160]
+custom_minimum_size = Vector2(0, 20)
 layout_mode = 2
+
+[node name="Label" type="RichTextLabel" parent="VBoxContainer" unique_id=232031148]
+custom_minimum_size = Vector2(0, 75)
+layout_mode = 2
+theme_override_font_sizes/normal_font_size = 42
+bbcode_enabled = true
+text = "[center][wave amp=50.0 speed=0.0] 🕹️LITTLE DUELERS🕹️[/wave][/center]
+"
+horizontal_alignment = 1
+
+[node name="Control" type="Control" parent="VBoxContainer" unique_id=1047905927]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+
+[node name="OfflineButton" type="Button" parent="VBoxContainer" unique_id=466342237]
+custom_minimum_size = Vector2(280, 55)
+layout_mode = 2
+size_flags_horizontal = 4
+mouse_default_cursor_shape = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("StyleBoxFlat_7r1g0")
+theme_override_styles/hover = SubResource("StyleBoxFlat_cqjrg")
+text = "🎮 VS COMPUTER BOT (OFFLINE)
+"
+
+[node name="Label2" type="Label" parent="VBoxContainer" unique_id=1785379252]
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_styles/normal = SubResource("StyleBoxFlat_qoqlk")
 
 [node name="HostButton" type="Button" parent="VBoxContainer" unique_id=1540202427]
+custom_minimum_size = Vector2(280, 55)
 layout_mode = 2
+size_flags_horizontal = 4
+mouse_default_cursor_shape = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("StyleBoxFlat_eiy7p")
+theme_override_styles/hover = SubResource("StyleBoxFlat_iwfq2")
+text = "🎮HOST MATCH🎮"
 
 [node name="JoinButton" type="Button" parent="VBoxContainer" unique_id=9744914]
+custom_minimum_size = Vector2(280, 55)
 layout_mode = 2
+size_flags_horizontal = 4
+mouse_default_cursor_shape = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 18
+theme_override_styles/normal = SubResource("StyleBoxFlat_kjwba")
+theme_override_styles/hover = SubResource("StyleBoxFlat_h7a2f")
+text = "⚔️JOIN MATCH⚔️"
 
 [node name="IPInput" type="LineEdit" parent="VBoxContainer" unique_id=103457923]
+custom_minimum_size = Vector2(300, 0)
 layout_mode = 2
+size_flags_horizontal = 4
+placeholder_text = "Enter IP Address to join a match"
+alignment = 1
+
+[connection signal="pressed" from="VBoxContainer/OfflineButton" to="." method="_on_offline_pressed"]
+[connection signal="pressed" from="VBoxContainer/HostButton" to="." method="_on_host_pressed"]
+[connection signal="pressed" from="VBoxContainer/JoinButton" to="." method="_on_join_pressed"]

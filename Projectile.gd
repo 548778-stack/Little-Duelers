@@ -74,7 +74,7 @@ func _physics_process(delta: float) -> void:
 		if marksman_redirected:
 			is_tracking_bullet = true
 
-	# --- 🎯 SMOOTH ARC STEERING & RECOVERY MATRIX ---
+	# --- 🎯 SMOOTH ARC STEERING & RECOVERY ---
 	if is_tracking_bullet and is_instance_valid(enemy):
 		var target_dir = global_position.direction_to(enemy.global_position)
 		var avoidance_force = Vector2.ZERO
@@ -104,37 +104,37 @@ func _physics_process(delta: float) -> void:
 		# Bounce off Top and Bottom screen borders safely
 		if global_position.y <= 15.0:
 			global_position.y = 15.0
-			velocity_vector.y = abs(velocity_vector.y) # Force down vector direction
+			velocity_vector.y = abs(velocity_vector.y) # Bounce downwards
 			hit_wall = true
 		elif global_position.y >= view_size.y - 15.0:
 			global_position.y = view_size.y - 15.0
-			velocity_vector.y = -abs(velocity_vector.y) # Force up vector direction
+			velocity_vector.y = -abs(velocity_vector.y) # Bounce upwards
 			hit_wall = true
 			
-		# Bounce off Left and Right map border walls safely
+		# Bounce off Left and Right outer map border walls safely
 		if global_position.x <= 15.0:
 			global_position.x = 15.0
-			velocity_vector.x = abs(velocity_vector.x) # Force right vector direction
+			velocity_vector.x = abs(velocity_vector.x) # Bounce right
 			hit_wall = true
 		elif global_position.x >= view_size.x - 15.0:
 			global_position.x = view_size.x - 15.0
-			velocity_vector.x = -abs(velocity_vector.x) # Force left vector direction
+			velocity_vector.x = -abs(velocity_vector.x) # Bounce left
 			hit_wall = true
 			
 		if hit_wall:
 			bounce_count += 1
 			rotation = velocity_vector.angle()
 			
-			# Trigger an aesthetic dust particle spark burst at the bounce coordinates
+			# Trigger a visual spark burst at the bounce position
 			if arena.has_method("spawn_hit_particles"):
 				arena.spawn_hit_particles(global_position, Color(1.0, 1.0, 1.0))
 				
-			# If it completes 3 ricochets, wipe the bullet from memory
+			# If it completes 3 ricochets, remove the bullet from memory
 			if bounce_count >= max_bounces:
 				queue_free()
 				return
 	else:
-		# Standard basic bullet boundary cleanup rule
+		# Standard bullet boundary cleanup rule
 		if position.x < -50 or position.x > view_size.x + 50 or position.y < -50 or position.y > view_size.y + 50:
 			queue_free()
 

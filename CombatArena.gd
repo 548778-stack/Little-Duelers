@@ -20,46 +20,64 @@ var p2_selected_character: String = "Slingshotter"
 var p2_selected_skill: String = "Piercing Shot"
 var selected_map: String = "Standard Field"
 var starting_lives_setting: int = 3
+var p1_abilities_box: VBoxContainer
+var p2_abilities_box: VBoxContainer
 
 # HUD progress bar pointers
 var p1_ability_bar: TextureProgressBar
 var p2_ability_bar: TextureProgressBar
 
-# --- P2P NETWORKING CONSTANTS ---
 const DEFAULT_PORT = 8910
 
+# --- PRELOAD THE CHOSEN SCENES AS ASSETS ---
+const MAIN_MENU_SCENE = preload("res://MainMenu.tscn")
+const LOBBY_SCENE = preload("res://Lobby.tscn") # <--- ADD THIS
+
 func _ready() -> void:
-	# Connect Godot's built-in multiplayer signals to track connections
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+	show_main_menu_overlay()
+
+func show_main_menu_overlay() -> void:
+	menu_layer = CanvasLayer.new()
+	add_child(menu_layer)
 	
-	# Visual layout scenes: Main menu is handled directly by your MainMenu.tscn now!
-	print("🎯 Arena Initialized. Waiting for menu selection hooks...")
+	var menu_instance = MAIN_MENU_SCENE.instantiate()
+	menu_layer.add_child(menu_instance)
+	
+	var host_btn = menu_instance.find_child("HostButton", true, false)
+	var join_btn = menu_instance.find_child("JoinButton", true, false)
+	var ip_input = menu_instance.find_child("IPInput", true, false)
+	var offline_btn = menu_instance.find_child("OfflineButton", true, false)
+	
+	if offline_btn: offline_btn.pressed.connect(_on_offline_pressed)
+	if host_btn: host_btn.pressed.connect(_on_host_pressed)
+	if join_btn: join_btn.pressed.connect(func(): _on_join_pressed(ip_input.text if ip_input else ""))
+
+func _on_offline_pressed() -> void:
+	vs_ai_mode = true
+	show_lobby_dashboard()
 
 func _on_host_pressed() -> void:
 	var peer = ENetMultiplayerPeer.new()
 	var error = peer.create_server(DEFAULT_PORT, 2)
-	if error != OK:
-		print("❌ Failed to initialize host server socket!")
-		return
-	
+	if error != OK: return
 	multiplayer.multiplayer_peer = peer
 	vs_ai_mode = false
-	print("📡 Server initialized on port ", DEFAULT_PORT)
+	show_lobby_dashboard()
 
 func _on_join_pressed(target_ip: String) -> void:
 	var ip = target_ip.strip_edges()
 	if ip == "": ip = "127.0.0.1"
-		
 	var peer = ENetMultiplayerPeer.new()
-	var error = peer.create_client(ip, DEFAULT_PORT)
-	if error != OK:
-		print("❌ Connection request failure!")
-		return
-		
+	if peer.create_client(ip, DEFAULT_PORT) != OK: return
 	multiplayer.multiplayer_peer = peer
 	vs_ai_mode = false
-	print("🔌 Connecting to host address: ", ip)
+	
+	# Clear menu overlay and show waiting text for Guest
+	if is_instance_valid(menu_layer): menu_layer.queue_free()
+	print("🔌 Guest connected. Waiting for Host to select characters and launch...")
+
 
 func _on_peer_connected(id: int) -> void:
 	print("✅ Peer connected successfully! ID: ", id)
@@ -288,6 +306,86 @@ func spawn_hit_particles(hit_position: Vector2, particle_color: Color) -> void:
 	particles.color = particle_color
 	get_tree().create_timer(particles.lifetime).timeout.connect(particles.queue_free)
 
+# --- NEW: LOAD THE EDITOR LOBBY VIEW PANEL ---
+func show_lobby_dashboard() -> void:
+	if is_instance_valid(menu_layer):
+		menu_layer.queue_free()
+		
+	menu_layer = CanvasLayer.new()
+	add_child(menu_layer)
+	
+	var lobby_instance = LOBBY_SCENE.instantiate()
+	menu_layer.add_child(lobby_instance)
+	
+	# Hook up all column layout buttons to our choice tracking string slots [0.1]
+	_connect_lobby_button(lobby_instance, "P1Recon", func(): p1_selected_character = "Recon"; p1_selected_skill = "Recons Eye")
+	_connect_lobby_button(lobby_instance, "P1Slingshotter", func(): p1_selected_character = "Slingshotter"; p1_selected_skill = "Piercing Shot")
+	_connect_lobby_button(lobby_instance, "P1Cowboy", func(): p1_selected_character = "Cowboy"; p1_selected_skill = "Marksman")
+	
+	_connect_lobby_button(lobby_instance, "P2Recon", func(): p2_selected_character = "Recon"; p2_selected_skill = "Recons Eye")
+	_connect_lobby_button(lobby_instance, "P2Slingshotter", func(): p2_selected_character = "Slingshotter"; p2_selected_skill = "Piercing Shot")
+	_connect_lobby_button(lobby_instance, "P2Cowboy", func(): p2_selected_character = "Cowboy"; p2_selected_skill = "Marksman")
+	
+	_connect_lobby_button(lobby_instance, "MapStandard", func(): selected_map = "Standard Field")
+	_connect_lobby_button(lobby_instance, "MapChaos", func(): selected_map = "Obstacle Heavy Chaos")
+	_connect_lobby_button(lobby_instance, "MapPlain", func(): selected_map = "Open Empty Plain")
+	
+	var start_btn = lobby_instance.find_child("StartMatchButton", true, false)
+	if start_btn:
+		# Only allow the Host to launch the game across the network switches
+		if multiplayer.multiplayer_peer == null or multiplayer.is_server():
+			start_btn.pressed.connect(_on_setup_finished)
+		else:
+			start_btn.text = "WAITING FOR HOST..."
+			start_btn.disabled = true
+func update_lobby_abilities(player_num: int, class_type: String) -> void:
+	var container = p1_abilities_box if player_num == 1 else p2_abilities_box
+	if not is_instance_valid(container): return
+	
+	# Wipe old buttons instantly
+	for child in container.get_children():
+		child.queue_free()
+		
+	var valid_skills: Array[String] = []
+	match class_type:
+		"Recon": valid_skills = ["Recons Eye", "Recons Will"]
+		"Slingshotter": valid_skills = ["Piercing Shot", "Bouncing Shot"]
+		"Cowboy": valid_skills = ["Marksman", "Jerry Miculek"]
+		
+	# Assign local defaults safely
+	if player_num == 1: p1_selected_skill = valid_skills[0]
+	else: p2_selected_skill = valid_skills[0]
+	
+	# Create interactive, styled buttons for the available abilities
+	for skill in valid_skills:
+		var btn = Button.new()
+		btn.text = skill
+		btn.custom_minimum_size = Vector2(160, 40)
+		btn.add_theme_font_size_override("font_size", 14)
+		btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		
+		btn.pressed.connect(func():
+			if player_num == 1: p1_selected_skill = skill
+			else: p2_selected_skill = skill
+			print("Player ", player_num, " selected skill: ", skill)
+		)
+		container.add_child(btn)
+func _on_setup_finished() -> void:
+	# Wipes the Lobby selection overlay screen completely out of memory
+	if is_instance_valid(menu_layer):
+		menu_layer.queue_free()
+		
+	# Offline mode branch versus the Computer Bot
+	if vs_ai_mode or multiplayer.multiplayer_peer == null:
+		start_match()
+	else:
+		# If online P2P host, broadcast selected parameters across the school network switches!
+		print("📡 Host launching match. Distributing rules payload across LAN network sockets...")
+		rpc("sync_lobby_and_start", selected_map, starting_lives_setting, p1_selected_character, p1_selected_skill, p2_selected_character, p2_selected_skill)
+
+func _connect_lobby_button(parent_node: Node, btn_name: String, callback: Callable) -> void:
+	var btn = parent_node.find_child(btn_name, true, false)
+	if btn: btn.pressed.connect(callback)
 func trigger_game_over(eliminated_player_id: int) -> void:
 	game_active = false
 	var winner_id = 2 if eliminated_player_id == 1 else 1
