@@ -1,9 +1,6 @@
 [gd_scene format=3 uid="uid://c4uciep1bi2al"]
 
-[ext_resource type="Script" uid="uid://cw7neaq7jc423" path="res://CombatArena.gd" id="1_qn7jf"]
-
 [node name="CombatArena" type="Node2D" unique_id=688265992]
-script = ExtResource("1_qn7jf")
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="." unique_id=179887406]
 _spawnable_scenes = PackedStringArray("uid://b1k5ajbttqe0q")
