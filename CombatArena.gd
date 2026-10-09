@@ -427,14 +427,19 @@ func start_match() -> void:
 		# --- SPAWN PLAYER 2 ---
 		player2 = player_scene.instantiate()
 		player2.name = "Player2"
-		add_child(player2) # MultiplayerSpawner automatically duplicates this to the guest!
+		add_child(player2)
 		player2.position = Vector2(screen_width - 120, screen_height / 2)
 		player2.setup_player(2, vs_ai_mode, p2_selected_character, p2_selected_skill)
 		player2.lives = starting_lives_setting
-		
+		# --- FIXED SAFETY CHECKS ---
+		# Only attempt network authority token handshakes if we are actually online!
 		if multiplayer.multiplayer_peer != null:
-			var client_peer_id = multiplayer.get_peers()[0]
+			var client_peer_id = 1 
+			if multiplayer.get_peers().size() > 0:
+				client_peer_id = multiplayer.get_peers()[0]
 			player2.set_multiplayer_authority(client_peer_id)
+		else:
+			player2.set_multiplayer_authority(1)
 			# Add synchronizer
 			var sync2 = MultiplayerSynchronizer.new()
 			var config2 = SceneReplicationConfig.new()

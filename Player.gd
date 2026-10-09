@@ -70,6 +70,61 @@ func setup_player(id: int, brain_enabled: bool, chosen_class: String, chosen_abi
 	time_since_last_ability = active_ability_cooldown_time
 	ai_target_vector = position
 
+func _ready() -> void:
+	# 1. DELAY FRAME: Give Godot's network spawner a tiny fraction of a second 
+	# to finish setting up peer network authority tokens before running calculations!
+	await get_tree().process_frame
+	
+	var arena = get_parent()
+	if not is_instance_valid(arena): 
+		print("❌ Player Error: No Combat Arena manager detected!")
+		return
+	
+	# 2. DYNAMIC NETWORK ID ASSIGNMENT
+	# Check our native scene tree node name string to determine who we are!
+	if name == "Player1":
+		# Player 1 is always hosted by the Server/Host terminal
+		setup_player(1, false, arena.p1_selected_character, arena.p1_selected_skill)
+		lives = arena.starting_lives_setting
+		current_health = max_health
+		
+		# Build the physical Blue box visual layer directly on both machines
+		var visual = ColorRect.new()
+		visual.size = Vector2(40, 80)
+		visual.position = Vector2(-20, -40) # Pivot center offset
+		visual.color = Color(0.2, 0.6, 1.0)
+		add_child(visual)
+		
+	elif name == "Player2":
+		# Player 2 can be an offline bot OR a remote connected peer client machine
+		setup_player(2, arena.vs_ai_mode, arena.p2_selected_character, arena.p2_selected_skill)
+		lives = arena.starting_lives_setting
+		current_health = max_health
+		
+		# Build the physical Red box visual layer directly on both machines
+		var visual = ColorRect.new()
+		visual.size = Vector2(40, 80)
+		visual.position = Vector2(-20, -40)
+		visual.color = Color(1.0, 0.3, 0.3)
+		add_child(visual)
+
+	# 3. UNIVERSAL COLLIDER COMPILATION
+	# Ensure the physical boundary lines construct themselves on both monitors safely!
+	var collider = CollisionShape2D.new()
+	var box_shape = RectangleShape2D.new()
+	box_shape.size = Vector2(40, 80)
+	collider.shape = box_shape
+	add_child(collider)
+	
+	# Calculate a safe printable role name string depending on if we are online or offline
+	var authority_info = "Local PC"
+	if multiplayer.multiplayer_peer != null:
+		authority_info = str(is_multiplayer_authority())
+		
+	print("✅ Network Character Initialized: ", name, " | Class: ", character_class, " | Authority: ", authority_info)
+
+
+
 func _physics_process(delta: float) -> void:
 	# P2P NETWORK SHIELD: Drop computing inputs if this machine does not own this specific character block!
 	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():

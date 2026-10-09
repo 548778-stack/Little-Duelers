@@ -5,11 +5,15 @@ var direction: float = 1.0
 var attacker_id: int = 1
 var damage_type: String = "normal"
 
-# --- NEW: 360 DEGREE MOUSE TRAJECTORY VECTOR ---
+# --- 360 DEGREE MOUSE TRAJECTORY VECTOR ---
 var velocity_vector: Vector2 = Vector2.RIGHT
 
 var target_initial_y: float = -999.0
 var marksman_redirected: bool = false
+
+# --- BOUNCING MECHANICS STACKS ---
+var bounce_count: int = 0
+var max_bounces: int = 3
 
 func set_vector_trajectory(dir_vector: Vector2) -> void:
 	velocity_vector = dir_vector.normalized()
@@ -36,6 +40,11 @@ func _ready() -> void:
 			visual.size = Vector2(16, 6)
 			visual.color = Color(1.0, 0.5, 0.0)
 			speed = 800.0
+		"bouncing_normal":
+			# NEW: Visually render the Slingshotter's bouncing projectile block
+			visual.size = Vector2(16, 8)
+			visual.color = Color(0.0, 0.9, 1.0) # Bright Glowing Neon Cyan
+			speed = 750.0
 		_:
 			visual.size = Vector2(16, 6)
 			visual.color = Color(1.0, 1.0, 1.0)
@@ -67,40 +76,67 @@ func _physics_process(delta: float) -> void:
 
 	# --- 🎯 SMOOTH ARC STEERING & RECOVERY MATRIX ---
 	if is_tracking_bullet and is_instance_valid(enemy):
-		# 1. Base tracking behavior: Constantly calculate a pulling force toward the enemy target position
 		var target_dir = global_position.direction_to(enemy.global_position)
-		
-		# 2. Obstacle Evasion Radar
 		var avoidance_force = Vector2.ZERO
 		
 		for child in arena.get_children():
 			if child.name.begins_with("Obstacle_"):
 				var dist = global_position.distance_to(child.global_position)
-				# Only trigger evasion if the bullet enters the danger bubble radius
 				if dist < 110.0:
-					# Is the projectile actually traveling toward the obstacle horizontally?
 					var approach_check = velocity_vector.dot(global_position.direction_to(child.global_position))
 					if approach_check > 0.0:
-						# Generate a pushing force perpendicular/away from the center point of that stone pillar
 						var away_dir = child.global_position.direction_to(global_position)
-						# The closer the bullet gets, the harder the radar pushes it away
 						var strength = (110.0 - dist) / 110.0
 						avoidance_force += away_dir * strength * 3.5
-		# 3. Combine both vectors together!
-		# This blends the tracking pull and the obstacle avoidance push seamlessly
 		var final_steering_dir = (target_dir + avoidance_force).normalized()
-		
-		# Smoothly rotate the current flight path toward the new calculated direction vector over time
-		# 6.0 control tracking weight ensures tight, sharp snapping speeds
 		velocity_vector = velocity_vector.move_toward(final_steering_dir, delta * 6.0).normalized()
 		rotation = velocity_vector.angle()
+
 	# --- UNIFIED FLIGHT VECTOR MOTION ---
 	global_position += velocity_vector * speed * delta
 	
 	var view_size = get_viewport_rect().size
-	if position.x < -50 or position.x > view_size.x + 50 or position.y < -50 or position.y > view_size.y + 50:
-		queue_free()
-
+	
+	# --- 🌍 NEW: BOUNCING SHOT WALL INTERSECTION DETECTOR ---
+	if damage_type == "bouncing_normal":
+		var hit_wall = false
+		
+		# Bounce off Top and Bottom screen borders safely
+		if global_position.y <= 15.0:
+			global_position.y = 15.0
+			velocity_vector.y = abs(velocity_vector.y) # Force down vector direction
+			hit_wall = true
+		elif global_position.y >= view_size.y - 15.0:
+			global_position.y = view_size.y - 15.0
+			velocity_vector.y = -abs(velocity_vector.y) # Force up vector direction
+			hit_wall = true
+			
+		# Bounce off Left and Right map border walls safely
+		if global_position.x <= 15.0:
+			global_position.x = 15.0
+			velocity_vector.x = abs(velocity_vector.x) # Force right vector direction
+			hit_wall = true
+		elif global_position.x >= view_size.x - 15.0:
+			global_position.x = view_size.x - 15.0
+			velocity_vector.x = -abs(velocity_vector.x) # Force left vector direction
+			hit_wall = true
+			
+		if hit_wall:
+			bounce_count += 1
+			rotation = velocity_vector.angle()
+			
+			# Trigger an aesthetic dust particle spark burst at the bounce coordinates
+			if arena.has_method("spawn_hit_particles"):
+				arena.spawn_hit_particles(global_position, Color(1.0, 1.0, 1.0))
+				
+			# If it completes 3 ricochets, wipe the bullet from memory
+			if bounce_count >= max_bounces:
+				queue_free()
+				return
+	else:
+		# Standard basic bullet boundary cleanup rule
+		if position.x < -50 or position.x > view_size.x + 50 or position.y < -50 or position.y > view_size.y + 50:
+			queue_free()
 
 func _on_body_entered(body: Node) -> void:
 	if body.name.begins_with("Obstacle_"):
