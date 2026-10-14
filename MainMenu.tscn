@@ -82,7 +82,7 @@ theme_override_styles/hover = SubResource("StyleBoxFlat_cqjrg")
 text = "🎮 VS COMPUTER BOT (OFFLINE)
 "
 
-[node name="Label2" type="Label" parent="VBoxContainer" unique_id=1785379252]
+[node name="IPLabel" type="Label" parent="VBoxContainer" unique_id=1785379252]
 custom_minimum_size = Vector2(280, 0)
 layout_mode = 2
 size_flags_horizontal = 4

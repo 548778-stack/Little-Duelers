@@ -34,9 +34,48 @@ const MAIN_MENU_SCENE = preload("res://MainMenu.tscn")
 const LOBBY_SCENE = preload("res://Lobby.tscn") # <--- ADD THIS
 
 func _ready() -> void:
+	# Connect Godot's built-in multiplayer signals to track connections
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
-	show_main_menu_overlay()
+	
+	# Load the visual menu layer over the screen canvas
+	menu_layer = CanvasLayer.new()
+	add_child(menu_layer)
+	
+	var menu_instance = MAIN_MENU_SCENE.instantiate()
+	menu_layer.add_child(menu_instance)
+	
+	# Fetch our clean internal LAN address signature string
+	var real_host_ip = get_my_local_ip()
+	
+	# --- 📡 NEW: AUTOMATED IP DISPLAY LINKER ---
+	# We search your MainMenu.tscn scene tree dynamically to find the IP Label node
+	# (Ensure your Label node type inside MainMenu.tscn is named exactly "IPLabel" or "Label")
+	var ip_display_label = menu_instance.find_child("IPLabel", true, false)
+	if ip_display_label:
+		ip_display_label.text = "YOUR MATCH IP: " + real_host_ip
+		# Apply a high-contrast theme color override so the host can see it easily across lab desks
+		ip_display_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2)) # Radiant Gold Glow
+		print("📡 IP Label Node located! Displaying local address signature: ", real_host_ip)
+	else:
+		# Fallback check: If you left its name as default "Label" or "Label2", we look for that too
+		var backup_lbl = menu_instance.find_child("Label2", true, false)
+		if backup_lbl:
+			backup_lbl.text = "YOUR MATCH IP: " + real_host_ip
+			backup_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	
+	# Connect the editor visual layout buttons directly to our networking hooks!
+	var host_btn = menu_instance.find_child("HostButton", true, false)
+	var join_btn = menu_instance.find_child("JoinButton", true, false)
+	var ip_input = menu_instance.find_child("IPInput", true, false)
+	var offline_btn = menu_instance.find_child("OfflineButton", true, false)
+	
+	if offline_btn: offline_btn.pressed.connect(_on_offline_pressed)
+	if host_btn: host_btn.pressed.connect(_on_host_pressed)
+	if join_btn: join_btn.pressed.connect(func(): _on_join_pressed(ip_input.text if ip_input else ""))
+	
+	print("🎯 Arena Booted. Visual MainMenu UI overlaid cleanly with active IP broadcast support.")
+
 
 func show_main_menu_overlay() -> void:
 	menu_layer = CanvasLayer.new()
@@ -491,3 +530,30 @@ func _unhandled_input(event: InputEvent) -> void:
 				multiplayer.multiplayer_peer.close()
 				multiplayer.multiplayer_peer = null
 			get_tree().reload_current_scene()
+
+func get_my_local_ip() -> String:
+	var addresses = IP.get_local_addresses()
+	
+	# PRIORITY 1: Force find your exact high school lab network sequence
+	for ip in addresses:
+		if ip.begins_with("10.220."):
+			return ip
+			
+	# PRIORITY 2: Standard school LAN ranges
+	for ip in addresses:
+		if not ":" in ip and ip != "127.0.0.1":
+			if ip.begins_with("10.") or ip.begins_with("172."):
+				return ip
+				
+	# PRIORITY 3: Home routers or fallbacks (skipping known virtual networks if possible)
+	for ip in addresses:
+		if not ":" in ip and ip != "127.0.0.1":
+			if ip.begins_with("192.168.") and not ip.contains(".145."):
+				return ip
+				
+	# Final fallback catch-all loop
+	for ip in addresses:
+		if not ":" in ip and ip != "127.0.0.1":
+			return ip
+			
+	return "127.0.0.1"

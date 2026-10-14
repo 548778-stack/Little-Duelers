@@ -42,6 +42,13 @@ var jerry_miculek_charges: int = 2
 var ai_reaction_timer: float = 0.0
 var ai_target_vector: Vector2 = Vector2.ZERO
 
+# Insert these variables near the top of EnemyAI.gd with your other properties:
+var last_health_recorded: float = 3.0
+var search_new_lane_cooldown: float = 0.0
+var current_tactical_range_x: float = 0.0 # Holds its chosen horizontal positioning lane
+var range_shuffle_timer: float = 0.0
+
+
 func _ready() -> void:
 	# Read current synchronized state choices straight from the arena manager parent
 	var arena = get_parent()
@@ -123,13 +130,34 @@ func _physics_process(delta: float) -> void:
 
 func process_ai_behavior(delta: float) -> void:
 	ai_reaction_timer += delta
-	if ai_reaction_timer < 0.08: return
+	# Update background tactical shuffling timers frame-by-frame
+	if search_new_lane_cooldown > 0.0: search_new_lane_cooldown -= delta
+	range_shuffle_timer += delta
+	
+	if ai_reaction_timer < 0.08: return 
 	ai_reaction_timer = 0.0
 	
 	var arena = get_parent()
 	var opponent = arena.player1
 	if not is_instance_valid(opponent): return
 
+	var view_size = get_viewport_rect().size
+	var mid_x = view_size.x / 2.0
+
+	# --- 1. RANDOMIZED HORIZONTAL RANGE SHUFFLING ---
+	# Every 2.5 seconds, the AI picks a new horizontal lane depth so it doesn't just charge forward blindly!
+	if range_shuffle_timer >= 2.5 or current_tactical_range_x == 0.0:
+		range_shuffle_timer = 0.0
+		# Roll a random lane: Close Hug (mid_x + 60), Mid Range (mid_x + 200), or Back Wall (view_size.x - 100)
+		var lane_choice = randi_range(0, 2)
+		if lane_choice == 0:
+			current_tactical_range_x = mid_x + 60.0 # Aggressive cover hug
+		elif lane_choice == 1:
+			current_tactical_range_x = mid_x + 220.0 # Mid-field positioning
+		else:
+			current_tactical_range_x = view_size.x - 100.0 # Defensive backline spacing
+
+	# --- 2. RADAR CHECK FOR INCOMING BULLETS ---
 	var danger_detected = false
 	var danger_pos = Vector2.ZERO
 	var incoming_bullet_count = 0
@@ -138,32 +166,80 @@ func process_ai_behavior(delta: float) -> void:
 		if child.name.begins_with("@Area2D@") or child.has_method("set_vector_trajectory"):
 			if child.get("attacker_id") != player_id:
 				var dist = global_position.distance_to(child.global_position)
-				if dist < 350.0:
+				if dist < 300.0:
 					incoming_bullet_count += 1
 					if not danger_detected:
 						danger_detected = true
 						danger_pos = child.global_position
 
+	# --- 3.👁️ VISION CONE / LINE-OF-SIGHT GEOMETRY ENGINE ---
+	var shot_is_blocked_by_wall = false
+	var absolute_dist_x = abs(position.x - opponent.position.x)
+	
+	for child in arena.get_children():
+		if child.name.begins_with("Obstacle_"):
+			if (child.global_position.x > position.x and child.global_position.x < opponent.position.x) or (child.global_position.x < position.x and child.global_position.x > opponent.position.x):
+				var interpolation_ratio = abs(child.global_position.x - position.x) / absolute_dist_x
+				var projected_shot_y = position.y + (opponent.position.y - position.y) * interpolation_ratio
+				
+				if abs(child.global_position.y - projected_shot_y) < 55.0:
+					shot_is_blocked_by_wall = true
+					break
+
+	# --- 4.🧠 THE ANTI-CHEESE POKE-DAMAGE MEMORY METER ---
+	var just_took_hit = (current_health < last_health_recorded)
+	last_health_recorded = current_health # Update tracking snapshot cache
+	
+	if just_took_hit and shot_is_blocked_by_wall and search_new_lane_cooldown <= 0.0:
+		print("🧠 AI Brain: 'Hey! They are poke-damaging me from behind cover! Changing lanes completely!'")
+		# Set a 3-second cooldown so it doesn't spin wildly if hit repeatedly
+		search_new_lane_cooldown = 3.0 
+		
+		# Force a complete positioning relocation! Move completely away to the opposite horizontal half!
+		var current_screen_quadrant = 1.0 if position.y < view_size.y / 2.0 else -1.0
+		# If it was in the top half, force it to rocket to the bottom half, or vice versa
+		var escape_y = (view_size.y * 0.75) if current_screen_quadrant == 1.0 else (view_size.y * 0.25)
+		
+		# Fall back deeply to break your aiming angle and reset its approach track profile
+		ai_target_vector = Vector2(view_size.x - 80.0, escape_y)
+		return # Intercepts processing loop instantly on hit frames to force the escape vector!
+
+	# --- 5. ADAPTIVE 2D PATHING STRATEGY TREE ---
 	if danger_detected:
+		# Priority 1: Evade incoming fire trajectory paths
 		var dodge_dir = 1.0 if danger_pos.y < global_position.y else -1.0
-		ai_target_vector = global_position + Vector2(randf_range(-60, 60), dodge_dir * 180.0)
+		ai_target_vector = global_position + Vector2(randf_range(-40, 40), dodge_dir * 160.0)
 		if incoming_bullet_count > 2 and time_since_last_ability >= active_ability_cooldown_time:
 			try_use_ability()
-	elif incoming_bullet_count > 1 or (opponent.time_since_last_normal < 0.15 and abs(position.y - opponent.position.y) < 80.0):
-		if abs(ai_target_vector.y - position.y) < 20.0:
-			var swing_target_y = arena.get_viewport_rect().size.y - opponent.position.y
-			var flank_x_offset = randf_range(100.0, 300.0)
-			ai_target_vector = Vector2(arena.get_viewport_rect().size.x / 2.0 + flank_x_offset, swing_target_y)
+			
+	elif search_new_lane_cooldown > 1.5:
+		# Priority 2: Maintain Escape/Flank Vector route if memory triggers it
+		# (Keeps driving toward the relocation vector assigned in step 4)
+		pass
+		
+	elif shot_is_blocked_by_wall:
+		# Priority 3: Active cover peeking behavior
+		# Move to our current shuffled range depth layer, but shuffle vertical positioning to try and break your camp
+		if randf() > 0.5:
+			ai_target_vector.y = opponent.global_position.y + (180.0 if randf() > 0.5 else -180.0)
+			ai_target_vector.x = clampf(current_tactical_range_x, mid_x + 45.0, view_size.x - 60.0)
+		else:
+			ai_target_vector.x = clampf(current_tactical_range_x, mid_x + 45.0, view_size.x - 60.0)
+			
 	else:
-		if randf() > 0.85:
-			ai_target_vector = opponent.global_position + Vector2(randf_range(50, 200), randf_range(-90.0, 90.0))
-		elif position.distance_to(ai_target_vector) < 40.0:
-			ai_target_vector = opponent.global_position
+		# Priority 4: Clear View Field! Advance and attack along the current shuffled lane depth
+		ai_target_vector = Vector2(current_tactical_range_x, opponent.global_position.y)
 
-	var absolute_dist_x = abs(position.x - opponent.position.x)
+	# --- 6. TACTICAL FIRING GATE SYSTEM ---
 	var absolute_dist_y = abs(position.y - opponent.position.y)
 	
-	if absolute_dist_x > 200.0 and absolute_dist_y < 180.0:
+	if absolute_dist_x > 150.0 and absolute_dist_y < 220.0:
+		var works_around_walls = (selected_ability == "Recons Eye" or selected_ability == "Marksman" or selected_ability == "Piercing Shot")
+		
+		if shot_is_blocked_by_wall and not works_around_walls:
+			return # Cease fire to conserve ammunition
+			
+		# --- USE CLASS ABILITIES ---
 		if time_since_last_ability >= active_ability_cooldown_time:
 			match character_class:
 				"Recon":
@@ -178,6 +254,7 @@ func process_ai_behavior(delta: float) -> void:
 					elif selected_ability == "Jerry Miculek" and current_ammo <= 1:
 						try_use_ability()
 
+		# --- PRIMARY ATTACK ---
 		if character_class == "Cowboy" and current_ammo <= 0:
 			start_reload()
 		elif time_since_last_normal >= normal_cooldown_time and not is_reloading:
@@ -185,6 +262,7 @@ func process_ai_behavior(delta: float) -> void:
 			var fire_target = opponent.global_position + prediction_offset
 			var fire_direction = global_position.direction_to(fire_target)
 			local_spawn_projectile("normal", global_position, fire_direction, 0.0)
+			
 			time_since_last_normal = 0.0
 			if character_class == "Cowboy":
 				current_ammo -= 1
