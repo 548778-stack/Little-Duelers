@@ -1,0 +1,181 @@
+[gd_scene format=3 uid="uid://dyymbwxkbfydn"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_vho1f"]
+bg_color = Color(0.12591079, 0.12591085, 0.12591082, 0.8745098)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="Lobby" type="Control" unique_id=2079194528]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ColorRect" type="ColorRect" parent="." unique_id=860333423]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.11764706, 0.14117648, 0.18039216, 1)
+
+[node name="VBoxContainer" type="VBoxContainer" parent="." unique_id=1108305959]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 30
+
+[node name="Control" type="Control" parent="VBoxContainer" unique_id=482774690]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="VBoxContainer" unique_id=1421301558]
+layout_mode = 2
+theme_override_font_sizes/font_size = 28
+text = "Lobby"
+horizontal_alignment = 1
+
+[node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer" unique_id=418186779]
+layout_mode = 2
+theme_override_constants/separation = 60
+
+[node name="P1Column" type="VBoxContainer" parent="VBoxContainer/HBoxContainer" unique_id=1868295970]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/P1Column" unique_id=1715012664]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "🔵 PLAYER 1"
+horizontal_alignment = 1
+
+[node name="P1Recon" type="Button" parent="VBoxContainer/HBoxContainer/P1Column" unique_id=412960957]
+custom_minimum_size = Vector2(220, 80)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_override_font_sizes/font_size = 24
+text = "Recon"
+
+[node name="P1Slingshotter" type="Button" parent="VBoxContainer/HBoxContainer/P1Column" unique_id=1250693862]
+custom_minimum_size = Vector2(220, 80)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_override_font_sizes/font_size = 24
+text = "Sling 
+Shotter"
+
+[node name="P1Cowboy" type="Button" parent="VBoxContainer/HBoxContainer/P1Column" unique_id=1051551755]
+custom_minimum_size = Vector2(220, 80)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_override_font_sizes/font_size = 24
+text = "Cowboy"
+
+[node name="P1AbilitiesContainer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/P1Column" unique_id=996795975]
+layout_mode = 2
+
+[node name="CenterColumn" type="VBoxContainer" parent="VBoxContainer/HBoxContainer" unique_id=381680818]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/CenterColumn" unique_id=1762875275]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "🌍 MATCH SETTINGS"
+horizontal_alignment = 1
+
+[node name="MapStandard" type="Button" parent="VBoxContainer/HBoxContainer/CenterColumn" unique_id=1040460192]
+custom_minimum_size = Vector2(220, 80)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_override_font_sizes/font_size = 16
+text = "NORMAL PLAINS"
+
+[node name="MapChaos" type="Button" parent="VBoxContainer/HBoxContainer/CenterColumn" unique_id=1064740701]
+custom_minimum_size = Vector2(220, 80)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_override_font_sizes/font_size = 16
+text = "OBSTACLE CHAOS"
+
+[node name="MapPlain" type="Button" parent="VBoxContainer/HBoxContainer/CenterColumn" unique_id=1662098367]
+custom_minimum_size = Vector2(220, 80)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_override_font_sizes/font_size = 16
+text = "CLEAR PLAINS"
+
+[node name="Label2" type="Label" parent="VBoxContainer/HBoxContainer/CenterColumn" unique_id=1694419643]
+layout_mode = 2
+text = "Adjust Match Stocks:"
+
+[node name="LivesRow" type="HBoxContainer" parent="VBoxContainer/HBoxContainer/CenterColumn" unique_id=1452183750]
+layout_mode = 2
+theme_override_constants/separation = 15
+
+[node name="Lives3" type="Button" parent="VBoxContainer/HBoxContainer/CenterColumn/LivesRow" unique_id=772992288]
+custom_minimum_size = Vector2(100, 55)
+layout_mode = 2
+text = "3"
+
+[node name="Lives5" type="Button" parent="VBoxContainer/HBoxContainer/CenterColumn/LivesRow" unique_id=1377112300]
+custom_minimum_size = Vector2(100, 55)
+layout_mode = 2
+text = "5"
+
+[node name="Lives7" type="Button" parent="VBoxContainer/HBoxContainer/CenterColumn/LivesRow" unique_id=2000919422]
+custom_minimum_size = Vector2(100, 55)
+layout_mode = 2
+text = "7"
+
+[node name="P2Column" type="VBoxContainer" parent="VBoxContainer/HBoxContainer" unique_id=1885203908]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="VBoxContainer/HBoxContainer/P2Column" unique_id=377182298]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "🔴 PLAYER 2 / BOT"
+horizontal_alignment = 1
+
+[node name="P2Recon" type="Button" parent="VBoxContainer/HBoxContainer/P2Column" unique_id=1541712210]
+custom_minimum_size = Vector2(220, 80)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_override_font_sizes/font_size = 24
+text = "Recon"
+
+[node name="P2Slingshotter" type="Button" parent="VBoxContainer/HBoxContainer/P2Column" unique_id=1974933003]
+custom_minimum_size = Vector2(220, 80)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_override_font_sizes/font_size = 24
+text = "Sling 
+Shotter"
+
+[node name="P2Cowboy" type="Button" parent="VBoxContainer/HBoxContainer/P2Column" unique_id=486068859]
+custom_minimum_size = Vector2(220, 80)
+layout_mode = 2
+mouse_default_cursor_shape = 2
+theme_override_font_sizes/font_size = 24
+text = "Cowboy"
+
+[node name="P2AbilitiesContainer" type="VBoxContainer" parent="VBoxContainer/HBoxContainer/P2Column" unique_id=958851519]
+layout_mode = 2
+
+[node name="StartMatchButton" type="Button" parent="VBoxContainer" unique_id=1385611056]
+custom_minimum_size = Vector2(300, 60)
+layout_mode = 2
+size_flags_horizontal = 4
+theme_override_colors/font_color = Color(0, 1, 0.4, 1)
+theme_override_font_sizes/font_size = 22
+theme_override_styles/normal = SubResource("StyleBoxFlat_vho1f")
+text = "START
+"

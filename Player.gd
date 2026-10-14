@@ -1,4 +1,10 @@
-#wdsa
+#cd "S:\My Documents\little-duelers"
+# git add .
+# git commit -m "message"
+#git push
+
+# cd #cd other location
+# git pull
 
 extends CharacterBody2D
 
@@ -7,8 +13,8 @@ var player_id: int = 1
 var is_ai: bool = false 
 
 # Health & Match settings
-var max_health: int = 3
-var current_health: int = 3
+var max_health: float = 3.0
+var current_health: float = 3.0
 var lives: int = 3
 
 # Class Selection details from lobby
@@ -71,59 +77,32 @@ func setup_player(id: int, brain_enabled: bool, chosen_class: String, chosen_abi
 	ai_target_vector = position
 
 func _ready() -> void:
-	# 1. DELAY FRAME: Give Godot's network spawner a tiny fraction of a second 
-	# to finish setting up peer network authority tokens before running calculations!
+	# Wait one frame for the network handshake system to finish setting tokens
 	await get_tree().process_frame
 	
 	var arena = get_parent()
-	if not is_instance_valid(arena): 
-		print("❌ Player Error: No Combat Arena manager detected!")
-		return
+	if not is_instance_valid(arena): return
 	
-	# 2. DYNAMIC NETWORK ID ASSIGNMENT
-	# Check our native scene tree node name string to determine who we are!
+	if multiplayer.multiplayer_peer != null:
+		await get_tree().process_frame
+	
+	# (Your existing arena extraction and setup logic continues here identically...)
+	if not is_instance_valid(arena): return
+
+	# Determine character specifications from our spawned name node identity
 	if name == "Player1":
-		# Player 1 is always hosted by the Server/Host terminal
 		setup_player(1, false, arena.p1_selected_character, arena.p1_selected_skill)
 		lives = arena.starting_lives_setting
 		current_health = max_health
-		
-		# Build the physical Blue box visual layer directly on both machines
-		var visual = ColorRect.new()
-		visual.size = Vector2(40, 80)
-		visual.position = Vector2(-20, -40) # Pivot center offset
-		visual.color = Color(0.2, 0.6, 1.0)
-		add_child(visual)
-		
+		# Set ColorRect child tint for Player 1
+		$ColorRect.color = Color(0.2, 0.6, 1.0) # Radiant blue
 	elif name == "Player2":
-		# Player 2 can be an offline bot OR a remote connected peer client machine
 		setup_player(2, arena.vs_ai_mode, arena.p2_selected_character, arena.p2_selected_skill)
 		lives = arena.starting_lives_setting
 		current_health = max_health
-		
-		# Build the physical Red box visual layer directly on both machines
-		var visual = ColorRect.new()
-		visual.size = Vector2(40, 80)
-		visual.position = Vector2(-20, -40)
-		visual.color = Color(1.0, 0.3, 0.3)
-		add_child(visual)
+		$ColorRect.color = Color(1.0, 0.3, 0.3) # Crimson red
 
-	# 3. UNIVERSAL COLLIDER COMPILATION
-	# Ensure the physical boundary lines construct themselves on both monitors safely!
-	var collider = CollisionShape2D.new()
-	var box_shape = RectangleShape2D.new()
-	box_shape.size = Vector2(40, 80)
-	collider.shape = box_shape
-	add_child(collider)
-	
-	# Calculate a safe printable role name string depending on if we are online or offline
-	var authority_info = "Local PC"
-	if multiplayer.multiplayer_peer != null:
-		authority_info = str(is_multiplayer_authority())
-		
-	print("✅ Network Character Initialized: ", name, " | Class: ", character_class, " | Authority: ", authority_info)
-
-
+	print("✅ Hybrid Player Initialized over LAN Spawner: ", name)
 
 func _physics_process(delta: float) -> void:
 	# P2P NETWORK SHIELD: Drop computing inputs if this machine does not own this specific character block!
@@ -147,21 +126,15 @@ func _physics_process(delta: float) -> void:
 	else:
 		special_charge_timer = 0.0
 
-	# --- UNLOCKED 2D MOVEMENT VECTOR ENGINE ---
-	var direction = Vector2.ZERO
-	if is_ai:
-		process_ai_behavior(delta)
-		if position.distance_to(ai_target_vector) > 15.0:
-			direction = position.direction_to(ai_target_vector)
-	else:
-		# Both computers use the exact same WASD tokens safely now!
-		direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	# --- FIXED: CLEAN WASD DIRECTION CALCULATION ---
+	# Both computers use the exact same WASD tokens safely now!
+	var direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 			
 	# Inside Player.gd -> _physics_process(delta) function:
 	velocity = direction * speed
 	move_and_slide()
 	
-	# --- NEW: QUADRANT AND TERRITORY LOCKS ---
+	# --- QUADRANT AND TERRITORY LOCKS ---
 	var view_size = get_viewport_rect().size
 	var mid_x = view_size.x / 2.0
 	
@@ -175,6 +148,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		# Player 2 is locked strictly inside the RIGHT half (Top-Right & Bottom-Right quadrants)
 		position.x = clampf(position.x, mid_x + 30.0, view_size.x - 40.0)
+
 
 func _input(event: InputEvent) -> void:
 	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():
@@ -280,29 +254,142 @@ func local_spawn_projectile(type: String, start_pos: Vector2, fire_dir: Vector2,
 	bullet.attacker_id = player_id
 	bullet.damage_type = type
 	
-	# 1. ALWAYS add the child to the scene tree FIRST so Godot recognizes its coordinates
-	get_parent().add_child(bullet)
+	# --- 🎰 CRIT AND DAMAGE BALANCING MATRIX ---
+	var base_damage = 1.0
+	var crit_chance = 0.15 # 15% standard baseline crit chance
 	
-	# 2. NOW it is safe to assign its spatial positions and directions!
+	# Balance Class Overrides
+	if character_class == "Cowboy":
+		base_damage = 1.4 # Cowboy bullets deal harder decimal base damage!
+		crit_chance = 0.25 # Cowboy gets a 25% crit chance on normal shots
+		
+	if type == "special":
+		base_damage = 2.0
+	elif type == "marksman_normal":
+		# Cowboy Marksman custom ability is GUARANTEED to critically hit!
+		crit_chance = 1.0 
+		
+	# Roll the random percentage check to see if this bullet crits
+	var rolled_crit = randf() < crit_chance
+	if rolled_crit:
+		base_damage *= 2.0 # Critical strikes deal double damage!
+		
+	# Pass these custom stats straight down into the projectile instance data fields [0.1]
+	bullet.set_meta("damage_amount", base_damage)
+	bullet.set_meta("is_critical", rolled_crit)
+	
+	get_parent().add_child(bullet)
 	bullet.global_position = start_pos + (fire_dir * 45.0) + Vector2(0, spread_offset)
 	
-	# 3. Hand off the 360-degree mouse vector calculations downward to the bullet
 	if bullet.has_method("set_vector_trajectory"):
 		bullet.set_vector_trajectory(fire_dir)
 	else:
-		# Fallback parameter assignment
 		bullet.direction = 1.0 if fire_dir.x > 0 else -1.0
 
 
 
-func process_ai_behavior(_delta: float) -> void:
+
+# Replace the process_ai_behavior function inside your Player.gd file:
+
+func process_ai_behavior(delta: float) -> void:
+	ai_reaction_timer += delta
+	if ai_reaction_timer < 0.08: return # Blazing fast 80ms tick rate response time
+	ai_reaction_timer = 0.0
+	
 	var arena = get_parent()
-	var enemy = arena.player1
-	if is_instance_valid(enemy):
-		ai_target_vector = enemy.position
-		if position.distance_to(enemy.position) < 400.0 and time_since_last_normal >= normal_cooldown_time:
-			fire_projectile("normal")
+	if not is_instance_valid(arena): return
+	
+	# Locate our opponent (If AI is P2, opponent is P1)
+	var opponent = arena.player1 if player_id == 2 else arena.player2
+	if not is_instance_valid(opponent): return
+
+	var danger_detected = false
+	var danger_pos = Vector2.ZERO
+	var incoming_bullet_count = 0
+
+	# --- 1. SCAN RADAR FOR INCOMING DANGER ---
+	for child in arena.get_children():
+		if child.name.begins_with("@Area2D@") or child.has_method("set_vector_trajectory"):
+			# If this bullet belongs to the other player and is moving towards the AI's half
+			if child.get("attacker_id") != player_id:
+				var dist = global_position.distance_to(child.global_position)
+				if dist < 350.0: # Bullet is approaching danger circle bubble
+					incoming_bullet_count += 1
+					if not danger_detected:
+						danger_detected = true
+						danger_pos = child.global_position
+
+	# --- 2. ADAPTIVE DECISION TREE LAYERS ---
+	if danger_detected:
+		# LAYER A: INCOMING DAMAGE EVASION
+		# Slide aggressively away from the incoming projectile vector path height
+		var dodge_dir = 1.0 if danger_pos.y < global_position.y else -1.0
+		ai_target_vector = global_position + Vector2(randf_range(-60, 60), dodge_dir * 180.0)
+		
+		# If the player is spamming heavily, try to fire a protective counter-shot while dodging
+		if incoming_bullet_count > 2 and time_since_last_ability >= active_ability_cooldown_time:
+			try_use_ability()
+			
+	elif incoming_bullet_count > 1 or (opponent.time_since_last_normal < 0.15 and abs(position.y - opponent.position.y) < 80.0):
+		# LAYER B: ANTI-SPAM FLANKING MANEUVER
+		# If player is spamming straight shots, break mirroring! Swing out to a wild diagonal angle.
+		if abs(ai_target_vector.y - position.y) < 20.0:
+			var swing_target_y = arena.get_viewport_rect().size.y - opponent.position.y
+			var flank_x_offset = randf_range(100.0, 300.0) if player_id == 2 else randf_range(-300.0, -100.0)
+			ai_target_vector = Vector2(arena.get_viewport_rect().size.x / 2.0 + flank_x_offset, swing_target_y)
+			
+	else:
+		# LAYER C: POSITION MIRROR HUNT & ANGLE SEEKING
+		# Smooth tracking pursuit, adding slight random micro-shifts so it doesn't stay rigid
+		if randf() > 0.85:
+			ai_target_vector = opponent.global_position + Vector2(randf_range(50, 200) * (1 if player_id == 2 else -1), randf_range(-90.0, 90.0))
+		elif position.distance_to(ai_target_vector) < 40.0:
+			ai_target_vector = opponent.global_position
+
+	# --- 3. ATTACK EXECUTION MATRICES ---
+	var absolute_dist_x = abs(position.x - opponent.position.x)
+	var absolute_dist_y = abs(position.y - opponent.position.y)
+	
+	# If the AI has a viable shot angle or line-of-sight opportunity
+	if absolute_dist_x > 200.0 and absolute_dist_y < 180.0:
+		
+		# SMART SKILL MANAGEMENT: Smartly use class abilities based on tactical viability!
+		if time_since_last_ability >= active_ability_cooldown_time:
+			match character_class:
+				"Recon":
+					# Recon uses Eye immediately to ensure accuracy, or Will if you get too close
+					if selected_ability == "Recons Eye" or (selected_ability == "Recons Will" and absolute_dist_x < 500.0):
+						try_use_ability()
+				"Slingshotter":
+					# Slingshotter casts bouncing shot if you hide behind obstacles or move wide
+					if selected_ability == "Bouncing Shot" or (selected_ability == "Piercing Shot" and absolute_dist_y < 40.0):
+						try_use_ability()
+				"Cowboy":
+					# Cowboy sniper activates Marksman from range, uses Jerry if completely out of chambers
+					if selected_ability == "Marksman" and absolute_dist_x > 400.0:
+						try_use_ability()
+					elif selected_ability == "Jerry Miculek" and current_ammo <= 1:
+						try_use_ability()
+
+		# Standard Primary Fire Loops
+		if character_class == "Cowboy" and current_ammo <= 0:
+			start_reload()
+		elif time_since_last_normal >= normal_cooldown_time and not is_reloading:
+			# Predict opponent movement vectors slightly rather than shooting directly back
+			var prediction_offset = opponent.velocity * 0.15
+			var fire_target = opponent.global_position + prediction_offset
+			
+			# Call the dynamic firing matrix using the computed directional targets
+			var fire_direction = global_position.direction_to(fire_target)
+			if multiplayer.multiplayer_peer != null:
+				rpc("network_spawn_projectile", "normal", global_position, fire_direction, 0.0)
+			else:
+				local_spawn_projectile("normal", global_position, fire_direction, 0.0)
+			
 			time_since_last_normal = 0.0
+			if character_class == "Cowboy":
+				current_ammo -= 1
+
 
 func get_individual_bar_progress(bar_index: int) -> float:
 	if special_charges > bar_index: return 1.0
@@ -330,19 +417,35 @@ func get_ability_status_string() -> String:
 				return " [SKILL READY]"
 			return " [SKILL COOLDOWN]"
 
-func take_damage(amount: int, is_special_hit: bool) -> void:
+func take_damage(amount: float, is_special_hit: bool, is_crit_hit: bool = false) -> void:
 	if lives <= 0: return
+	
 	var final_damage = amount
-	if character_class == "Recon" and is_special_hit: final_damage += 1
-	var player_color = Color(0.2, 0.6, 1.0) if player_id == 1 else Color(1.0, 0.3, 0.3)
-	get_parent().spawn_hit_particles(global_position, player_color)
+	
+	if character_class == "Recon" and is_special_hit:
+		final_damage += 1.0
+		print("💥 Critical Vulnerability hit! Recon took extra damage!")
+		
+	# --- NEW: TRIGGER VISUAL CRIT POPUP ---
+	if is_crit_hit:
+		print("🎯 CRITICAL HIT REGISTERED! 2x Damage applied!")
+		# Call our new function on the arena parent to spawn the floating text
+		get_parent().spawn_crit_hit_marker(global_position)
+	
 	current_health -= final_damage
-	if current_health <= 0: lose_life()
+	
+	# Flashes golden particles for crits, matching class colors for standard hits
+	var particle_color = Color(1.0, 0.85, 0.2) if is_crit_hit else (Color(0.2, 0.6, 1.0) if player_id == 1 else Color(1.0, 0.3, 0.3))
+	get_parent().spawn_hit_particles(global_position, particle_color)
+	
+	if current_health <= 0.0:
+		lose_life()
 
 func lose_life() -> void:
 	lives -= 1
 	current_health = max_health 
-	if character_class == "Cowboy": current_ammo = max_ammo
+	if character_class == "Cowboy": 
+		current_ammo = max_ammo
 	if lives <= 0:
 		set_physics_process(false)
 		set_process_unhandled_input(false)

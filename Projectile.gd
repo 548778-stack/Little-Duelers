@@ -68,29 +68,38 @@ func _physics_process(delta: float) -> void:
 	
 	if damage_type == "marksman_normal" and is_instance_valid(enemy):
 		if target_initial_y == -999.0 and abs(position.x - 576.0) < 200.0:
-			velocity_vector = global_position.direction_to(enemy.global_position).normalized()
-			rotation = velocity_vector.angle()
+			set_meta("marksman_target_pos", enemy.global_position)
 			marksman_redirected = true
 		if marksman_redirected:
 			is_tracking_bullet = true
 
 	# --- 🎯 SMOOTH ARC STEERING & RECOVERY MATRIX ---
-	if is_tracking_bullet and is_instance_valid(enemy):
-		var target_dir = global_position.direction_to(enemy.global_position)
-		var avoidance_force = Vector2.ZERO
+	if is_tracking_bullet:
+		var target_dir = Vector2.ZERO
+		if damage_type == "tracking_normal" and is_instance_valid(enemy):
+			target_dir = global_position.direction_to(enemy.global_position).normalized()
+		elif damage_type == "marksman_normal" and has_meta("marksman_target_pos"):
+			var fixed_pos = get_meta("marksman_target_pos")
+			target_dir = global_position.direction_to(fixed_pos).normalized()
+			if global_position.distance_to(fixed_pos) < 20.0 or (direction > 0 and global_position.x > fixed_pos.x) or (direction < 0 and global_position.x < fixed_pos.x):
+				is_tracking_bullet = false
 		
-		for child in arena.get_children():
-			if child.name.begins_with("Obstacle_"):
-				var dist = global_position.distance_to(child.global_position)
-				if dist < 110.0:
-					var approach_check = velocity_vector.dot(global_position.direction_to(child.global_position))
-					if approach_check > 0.0:
-						var away_dir = child.global_position.direction_to(global_position)
-						var strength = (110.0 - dist) / 110.0
-						avoidance_force += away_dir * strength * 3.5
-		var final_steering_dir = (target_dir + avoidance_force).normalized()
-		velocity_vector = velocity_vector.move_toward(final_steering_dir, delta * 6.0).normalized()
-		rotation = velocity_vector.angle()
+		if target_dir != Vector2.ZERO:
+			var avoidance_force = Vector2.ZERO
+			for child in arena.get_children():
+				if child.name.begins_with("Obstacle_"):
+					var dist = global_position.distance_to(child.global_position)
+					if dist < 110.0:
+						var approach_check = velocity_vector.dot(global_position.direction_to(child.global_position))
+						if approach_check > 0.0:
+							var away_dir = child.global_position.direction_to(global_position)
+							var strength = (110.0 - dist) / 110.0
+							avoidance_force += away_dir * strength * 4.0
+
+			var final_steering_dir = (target_dir + avoidance_force).normalized()
+			var turn_weight = 8.0 if damage_type == "marksman_normal" else 5.0
+			velocity_vector = velocity_vector.move_toward(final_steering_dir, delta * turn_weight).normalized()
+			rotation = velocity_vector.angle()
 
 	# --- UNIFIED FLIGHT VECTOR MOTION ---
 	global_position += velocity_vector * speed * delta
@@ -111,7 +120,7 @@ func _physics_process(delta: float) -> void:
 			velocity_vector.y = -abs(velocity_vector.y) # Force up vector direction
 			hit_wall = true
 			
-		# Bounce off Left and Right map border walls safely
+		# Bounce off Left and Right outer map border walls safely
 		if global_position.x <= 15.0:
 			global_position.x = 15.0
 			velocity_vector.x = abs(velocity_vector.x) # Force right vector direction
@@ -146,9 +155,17 @@ func _on_body_entered(body: Node) -> void:
 
 	if body.has_method("take_damage"):
 		if body.player_id != attacker_id:
-			var is_special = damage_type.contains("special")
-			var damage_val = 1
-			if damage_type == "special": damage_val = 2
+			var damage_val = 1.0
+			var is_crit = false
 			
-			body.take_damage(damage_val, is_special)
+			if has_meta("damage_amount"):
+				damage_val = get_meta("damage_amount")
+			if has_meta("is_critical"):
+				is_crit = get_meta("is_critical")
+				
+			if not has_meta("damage_amount"):
+				if damage_type == "special": damage_val = 2.0
+				
+			var is_special = damage_type.contains("special")
+			body.take_damage(damage_val, is_special, is_crit)
 			queue_free()

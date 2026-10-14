@@ -20,299 +20,117 @@ var p2_selected_character: String = "Slingshotter"
 var p2_selected_skill: String = "Piercing Shot"
 var selected_map: String = "Standard Field"
 var starting_lives_setting: int = 3
+var p1_abilities_box: VBoxContainer
+var p2_abilities_box: VBoxContainer
 
 # HUD progress bar pointers
 var p1_ability_bar: TextureProgressBar
 var p2_ability_bar: TextureProgressBar
-var p1_abilities_container: VBoxContainer
-var p2_abilities_container: VBoxContainer
 
-# --- NEW: P2P NETWORKING VARIABLES ---
 const DEFAULT_PORT = 8910
-var ip_input_field: LineEdit
+
+# --- PRELOAD THE CHOSEN SCENES AS ASSETS ---
+const MAIN_MENU_SCENE = preload("res://MainMenu.tscn")
+const LOBBY_SCENE = preload("res://Lobby.tscn") # <--- ADD THIS
 
 func _ready() -> void:
-	var screen_width = get_viewport_rect().size.x
-	var screen_height = get_viewport_rect().size.y
-	
-	var bg = ColorRect.new()
-	bg.size = Vector2(screen_width, screen_height)
-	bg.color = Color(0.08, 0.09, 0.12)
-	add_child(bg)
-	
 	# Connect Godot's built-in multiplayer signals to track connections
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	
-	show_main_menu(screen_width, screen_height)
-
-# --- 1. MAIN MENU SCREEN WITH NETWORK HOOKS ---
-func show_main_menu(screen_width: float, screen_height: float) -> void:
+	# Load the visual menu layer over the screen canvas
 	menu_layer = CanvasLayer.new()
 	add_child(menu_layer)
 	
-	var container = CenterContainer.new()
-	container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	menu_layer.add_child(container)
+	var menu_instance = MAIN_MENU_SCENE.instantiate()
+	menu_layer.add_child(menu_instance)
 	
-	var vbox = VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 20)
-	container.add_child(vbox)
+	# Fetch our clean internal LAN address signature string
+	var real_host_ip = get_my_local_ip()
 	
-	var title = Label.new()
-	title.text = "🎯 TOP-DOWN P2P ARCADE DUEL"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 42)
-	vbox.add_child(title)
+	# --- 📡 NEW: AUTOMATED IP DISPLAY LINKER ---
+	# We search your MainMenu.tscn scene tree dynamically to find the IP Label node
+	# (Ensure your Label node type inside MainMenu.tscn is named exactly "IPLabel" or "Label")
+	var ip_display_label = menu_instance.find_child("IPLabel", true, false)
+	if ip_display_label:
+		ip_display_label.text = "YOUR MATCH IP: " + real_host_ip
+		# Apply a high-contrast theme color override so the host can see it easily across lab desks
+		ip_display_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2)) # Radiant Gold Glow
+		print("📡 IP Label Node located! Displaying local address signature: ", real_host_ip)
+	else:
+		# Fallback check: If you left its name as default "Label" or "Label2", we look for that too
+		var backup_lbl = menu_instance.find_child("Label2", true, false)
+		if backup_lbl:
+			backup_lbl.text = "YOUR MATCH IP: " + real_host_ip
+			backup_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
 	
-	# Fetch our clean LAN address from the helper routine
-	var host_ip = get_my_local_ip()
+	# Connect the editor visual layout buttons directly to our networking hooks!
+	var host_btn = menu_instance.find_child("HostButton", true, false)
+	var join_btn = menu_instance.find_child("JoinButton", true, false)
+	var ip_input = menu_instance.find_child("IPInput", true, false)
+	var offline_btn = menu_instance.find_child("OfflineButton", true, false)
 	
-	# NEW: Network Broadcast Info Banner Label
-	var ip_label = Label.new()
-	ip_label.text = "YOUR MATCH IP: " + host_ip
-	ip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	ip_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2)) # Golden color highlight
-	ip_label.add_theme_font_size_override("font_size", 18)
-	vbox.add_child(ip_label)
+	if offline_btn: offline_btn.pressed.connect(_on_offline_pressed)
+	if host_btn: host_btn.pressed.connect(_on_host_pressed)
+	if join_btn: join_btn.pressed.connect(func(): _on_join_pressed(ip_input.text if ip_input else ""))
 	
-	# Local VS AI Option Button
-	var btn_ai = Button.new()
-	btn_ai.text = "VS COMPUTER BOT (OFFLINE)"
-	btn_ai.custom_minimum_size = Vector2(320, 50)
-	btn_ai.pressed.connect(func(): 
-		vs_ai_mode = true
-		menu_layer.queue_free()
-		show_match_setup_screen()
-	)
-	vbox.add_child(btn_ai)
-	
-	var hr = HSeparator.new()
-	vbox.add_child(hr)
-	
-	var net_lbl = Label.new()
-	net_lbl.text = "--- LAN MULTIPLAYER SECTION ---"
-	net_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(net_lbl)
-	
-	var btn_host = Button.new()
-	btn_host.text = "🖥️ HOST LAN LOBBY"
-	btn_host.custom_minimum_size = Vector2(320, 50)
-	btn_host.pressed.connect(_on_host_pressed)
-	vbox.add_child(btn_host)
-	
-	ip_input_field = LineEdit.new()
-	ip_input_field.placeholder_text = "Enter Host's Local IP Address (e.g. 192.168.1.50)"
-	ip_input_field.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(ip_input_field)
-	
-	var btn_join = Button.new()
-	btn_join.text = "🔌 JOIN LAN LOBBY"
-	btn_join.custom_minimum_size = Vector2(320, 50)
-	btn_join.pressed.connect(_on_join_pressed)
-	vbox.add_child(btn_join)
+	print("🎯 Arena Booted. Visual MainMenu UI overlaid cleanly with active IP broadcast support.")
 
-# --- NEW: P2P SOCKET INITIALIZATIONS ---
+
+func show_main_menu_overlay() -> void:
+	menu_layer = CanvasLayer.new()
+	add_child(menu_layer)
+	
+	var menu_instance = MAIN_MENU_SCENE.instantiate()
+	menu_layer.add_child(menu_instance)
+	
+	var host_btn = menu_instance.find_child("HostButton", true, false)
+	var join_btn = menu_instance.find_child("JoinButton", true, false)
+	var ip_input = menu_instance.find_child("IPInput", true, false)
+	var offline_btn = menu_instance.find_child("OfflineButton", true, false)
+	
+	if offline_btn: offline_btn.pressed.connect(_on_offline_pressed)
+	if host_btn: host_btn.pressed.connect(_on_host_pressed)
+	if join_btn: join_btn.pressed.connect(func(): _on_join_pressed(ip_input.text if ip_input else ""))
+
+func _on_offline_pressed() -> void:
+	vs_ai_mode = true
+	show_lobby_dashboard()
+
 func _on_host_pressed() -> void:
 	var peer = ENetMultiplayerPeer.new()
-	var error = peer.create_server(DEFAULT_PORT, 2) # Limit to 2 players max
-	if error != OK:
-		print("❌ Failed to initialize host server socket node structure!")
-		return
-	
+	var error = peer.create_server(DEFAULT_PORT, 2)
+	if error != OK: return
 	multiplayer.multiplayer_peer = peer
 	vs_ai_mode = false
-	print("📡 Server initialized on port ", DEFAULT_PORT, ". Waiting for peers to join...")
-	
-	menu_layer.queue_free()
-	show_match_setup_screen()
-	
-func _on_join_pressed() -> void:
-	var target_ip = ip_input_field.text.strip_edges()
-	
-	# If the input box is left completely blank, fallback to hosting machine loopback local test mode
-	if target_ip == "":
-		target_ip = "127.0.0.1"
-		
+	show_lobby_dashboard()
+
+func _on_join_pressed(target_ip: String) -> void:
+	var ip = target_ip.strip_edges()
+	if ip == "": ip = "127.0.0.1"
 	var peer = ENetMultiplayerPeer.new()
-	var error = peer.create_client(target_ip, DEFAULT_PORT)
-	if error != OK:
-		print("❌ Connection initialization request failure!")
-		return
-		
+	if peer.create_client(ip, DEFAULT_PORT) != OK: return
 	multiplayer.multiplayer_peer = peer
 	vs_ai_mode = false
-	print("🔌 Attempting connection handshake with host address: ", target_ip)
 	
-	menu_layer.queue_free()
+	# Clear menu overlay and show waiting text for Guest
+	if is_instance_valid(menu_layer): menu_layer.queue_free()
+	print("🔌 Guest connected. Waiting for Host to select characters and launch...")
+
 
 func _on_peer_connected(id: int) -> void:
-	print("✅ Peer connected successfully! Network ID assigned: ", id)
-	# If we are the host server machine and our friend connected, let's sync up!
+	print("✅ Peer connected successfully! ID: ", id)
 	if multiplayer.is_server():
 		rpc("sync_lobby_and_start", selected_map, starting_lives_setting, p1_selected_character, p1_selected_skill, p2_selected_character, p2_selected_skill)
 
 func _on_peer_disconnected(id: int) -> void:
 	print("🚨 Peer client disconnected: ", id)
 	game_active = false
+	if multiplayer.multiplayer_peer != null:
+		multiplayer.multiplayer_peer.close()
+		multiplayer.multiplayer_peer = null
 	get_tree().reload_current_scene()
 
-# --- 2. MATCH SETUP SCREEN LAYOUT ---
-func show_match_setup_screen() -> void:
-	menu_layer = CanvasLayer.new()
-	add_child(menu_layer)
-	
-	var main_vbox = VBoxContainer.new()
-	main_vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	main_vbox.add_theme_constant_override("separation", 20)
-	menu_layer.add_child(main_vbox)
-	
-	var header = Label.new()
-	header.text = "⚙️ LOBBY: MATCH CONFIGURATION"
-	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	header.add_theme_font_size_override("font_size", 28)
-	main_vbox.add_child(header)
-	
-	var columns_hbox = HBoxContainer.new()
-	columns_hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	columns_hbox.add_theme_constant_override("separation", 50)
-	main_vbox.add_child(columns_hbox)
-	
-	# P1 COLUMN
-	var p1_panel = PanelContainer.new()
-	p1_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	columns_hbox.add_child(p1_panel)
-	var p1_vbox = VBoxContainer.new()
-	p1_vbox.add_theme_constant_override("separation", 15)
-	p1_panel.add_child(p1_vbox)
-	var p1_title = Label.new()
-	p1_title.text = "🔵 PLAYER 1 CONFIG"
-	p1_title.add_theme_font_size_override("font_size", 20)
-	p1_vbox.add_child(p1_title)
-	
-	var p1_char_lbl = Label.new()
-	p1_char_lbl.text = "Select Character Class:"
-	p1_vbox.add_child(p1_char_lbl)
-	for character_name in ["Recon", "Slingshotter", "Cowboy"]:
-		var btn = Button.new()
-		btn.text = character_name
-		btn.pressed.connect(func(): 
-			p1_selected_character = character_name
-			update_ability_list(1, character_name)
-		)
-		p1_vbox.add_child(btn)
-		
-	var p1_skill_lbl = Label.new()
-	p1_skill_lbl.text = "Available Abilities:"
-	p1_vbox.add_child(p1_skill_lbl)
-	p1_abilities_container = VBoxContainer.new()
-	p1_vbox.add_child(p1_abilities_container)
-
-	# CENTER MATCH RULES AREA COLUMN
-	var center_panel = PanelContainer.new()
-	center_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	columns_hbox.add_child(center_panel)
-	var center_vbox = VBoxContainer.new()
-	center_vbox.add_theme_constant_override("separation", 15)
-	center_panel.add_child(center_vbox)
-	var center_title = Label.new()
-	center_title.text = "🌍 ARENA SETTINGS"
-	center_title.add_theme_font_size_override("font_size", 20)
-	center_vbox.add_child(center_title)
-	
-	var map_lbl = Label.new()
-	map_lbl.text = "Select Map Arena:"
-	center_vbox.add_child(map_lbl)
-	for map_name in ["Standard Field", "Obstacle Heavy Chaos", "Open Empty Plain"]:
-		var btn = Button.new()
-		btn.text = map_name
-		btn.pressed.connect(func(): selected_map = map_name)
-		center_vbox.add_child(btn)
-		
-	var rules_lbl = Label.new()
-	rules_lbl.text = "Adjust Match Lives Limit Pool:"
-	center_vbox.add_child(rules_lbl)
-	for stock_count in [3, 5, 7]:
-		var btn = Button.new()
-		btn.text = str(stock_count) + " Total Stocks"
-		btn.pressed.connect(func(): starting_lives_setting = stock_count)
-		center_vbox.add_child(btn)
-
-	# P2 COLUMN
-	var p2_panel = PanelContainer.new()
-	p2_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	columns_hbox.add_child(p2_panel)
-	var p2_vbox = VBoxContainer.new()
-	p2_vbox.add_theme_constant_override("separation", 15)
-	p2_panel.add_child(p2_vbox)
-	var p2_title = Label.new()
-	p2_title.text = "🔴 COMPUTER BOT CONFIG" if vs_ai_mode else "🔴 PLAYER 2 CONFIG"
-	p2_title.add_theme_font_size_override("font_size", 20)
-	p2_vbox.add_child(p2_title)
-	
-	var p2_char_lbl = Label.new()
-	p2_char_lbl.text = "Select Character Class:"
-	p2_vbox.add_child(p2_char_lbl)
-	for character_name in ["Recon", "Slingshotter", "Cowboy"]:
-		var btn = Button.new()
-		btn.text = character_name
-		btn.pressed.connect(func(): 
-			p2_selected_character = character_name
-			update_ability_list(2, character_name)
-		)
-		p2_vbox.add_child(btn)
-		
-	var p2_skill_lbl = Label.new()
-	p2_skill_lbl.text = "Available Abilities:"
-	p2_vbox.add_child(p2_skill_lbl)
-	p2_abilities_container = VBoxContainer.new()
-	p2_vbox.add_child(p2_abilities_container)
-
-	update_ability_list(1, p1_selected_character)
-	update_ability_list(2, p2_selected_character)
-
-	var footer_spacer = Control.new()
-	footer_spacer.custom_minimum_size = Vector2(0, 10)
-	main_vbox.add_child(footer_spacer)
-	
-	var start_btn = Button.new()
-	start_btn.text = "🚀 START COMBAT arena"
-	start_btn.custom_minimum_size = Vector2(400, 60)
-	start_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	start_btn.add_theme_font_size_override("font_size", 22)
-	start_btn.pressed.connect(_on_setup_finished)
-	main_vbox.add_child(start_btn)
-
-func update_ability_list(player_num: int, class_type: String) -> void:
-	var container = p1_abilities_container if player_num == 1 else p2_abilities_container
-	for child in container.get_children(): child.queue_free()
-	var valid_skills: Array[String] = []
-	match class_type:
-		"Recon": valid_skills = ["Recons Eye", "Recons Will"]
-		"Slingshotter": valid_skills = ["Piercing Shot", "Bouncing Shot"]
-		"Cowboy": valid_skills = ["Marksman", "Jerry Miculek"]
-		
-	if player_num == 1: p1_selected_skill = valid_skills[0]
-	else: p2_selected_skill = valid_skills[0]
-	
-	for skill in valid_skills:
-		var btn = Button.new()
-		btn.text = skill
-		btn.pressed.connect(func():
-			if player_num == 1: p1_selected_skill = skill
-			else: p2_selected_skill = skill
-		)
-		container.add_child(btn)
-
-func _on_setup_finished() -> void:
-	if vs_ai_mode or not multiplayer.multiplayer_peer != null:
-		menu_layer.queue_free()
-		start_match()
-	else:
-		print("📡 Host launching match. Distributing rules payload across LAN network sockets...")
-		rpc("sync_lobby_and_start", selected_map, starting_lives_setting, p1_selected_character, p1_selected_skill, p2_selected_character, p2_selected_skill)
-
-# --- RPC CALL: NETWORK PAYLOAD MIRROR ---
 @rpc("any_peer", "call_local", "reliable")
 func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 	selected_map = m_map
@@ -322,87 +140,14 @@ func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 	p2_selected_character = p2_c
 	p2_selected_skill = p2_s
 	
-	if is_instance_valid(menu_layer):
-		menu_layer.queue_free()
 	start_match()
 
-func spawn_center_obstacles(screen_width: float, screen_height: float, min_c: int, max_c: int) -> void:
-	var center_x = screen_width / 2
-	var number_of_obstacles = randi_range(min_c, max_c)
-	var sector_height = screen_height / number_of_obstacles
-	for i in range(number_of_obstacles):
-		if randf() > 0.7: continue
-		var obstacle = StaticBody2D.new()
-		obstacle.name = "Obstacle_" + str(i)
-		add_child(obstacle)
-		var rand_y = (i * sector_height) + randf_range(40.0, sector_height - 40.0)
-		obstacle.position = Vector2(center_x + randf_range(-50.0, 50.0), rand_y)
-		var block_width = randf_range(30.0, 60.0)
-		var block_height = randf_range(50.0, 110.0)
-		var visual = ColorRect.new()
-		visual.size = Vector2(block_width, block_height)
-		visual.position = -visual.size / 2
-		visual.color = Color(0.35, 0.38, 0.42)
-		obstacle.add_child(visual)
-		var collider = CollisionShape2D.new()
-		var box_shape = RectangleShape2D.new()
-		box_shape.size = visual.size
-		collider.shape = box_shape
-		obstacle.add_child(collider)
-
-func _draw() -> void:
-	var screen_width = get_viewport_rect().size.x
-	var screen_height = get_viewport_rect().size.y
-	
-	var center_x = screen_width / 2.0
-	var center_y = screen_height / 2.0
-	
-	# Choose a color for your boundary lines (e.g., a subtle semi-transparent gray)
-	var line_color = Color(0.25, 0.28, 0.35, 0.6)
-	var line_thickness = 4.0
-	
-	# 1. Draw Vertical Split Line (Y-Axis in the middle)
-	draw_line(Vector2(center_x, 0), Vector2(center_x, screen_height), line_color, line_thickness)
-	
-	# 2. Draw Horizontal Split Line (X-Axis in the middle)
-	draw_line(Vector2(0, center_y), Vector2(screen_width, center_y), line_color, line_thickness)
-
-# Append this function to the very bottom of your CombatArena.gd file
-
-func get_my_local_ip() -> String:
-	var addresses = IP.get_local_addresses()
-	
-	# PRIORITY 1: Force find your exact high school lab network sequence
-	for ip in addresses:
-		if ip.begins_with("10.220."):
-			return ip
-			
-	# PRIORITY 2: Standard school LAN ranges
-	for ip in addresses:
-		if not ":" in ip and ip != "127.0.0.1":
-			if ip.begins_with("10.") or ip.begins_with("172."):
-				return ip
-				
-	# PRIORITY 3: Home routers or fallbacks (skipping known virtual networks if possible)
-	for ip in addresses:
-		if not ":" in ip and ip != "127.0.0.1":
-			if ip.begins_with("192.168.") and not ip.contains(".145."):
-				return ip
-				
-	# Final fallback catch-all loop
-	for ip in addresses:
-		if not ":" in ip and ip != "127.0.0.1":
-			return ip
-			
-	return "127.0.0.1"
-
-# Replace EVERYTHING from start_match() down to the very end of your CombatArena.gd file:
-
+# --- 3. ARENA GENERATION & LIVE COMBAT ---
 func start_match() -> void:
 	var screen_width = get_viewport_rect().size.x
 	var screen_height = get_viewport_rect().size.y
 	
-	# Preload the scene instead of a script
+	# Preload the scene instead of constructing nodes manually
 	var player_scene = preload("res://Player.tscn")
 	
 	# ONLY THE HOST/SERVER SPAWNS THE PHYSICAL NODES
@@ -410,46 +155,29 @@ func start_match() -> void:
 		# --- SPAWN PLAYER 1 ---
 		player1 = player_scene.instantiate()
 		player1.name = "Player1"
-		add_child(player1) # MultiplayerSpawner automatically duplicates this to the guest!
+		add_child(player1) # MultiplayerSpawner automatically copies this to the guest!
 		player1.position = Vector2(120, screen_height / 2)
-		player1.setup_player(1, false, p1_selected_character, p1_selected_skill)
-		player1.lives = starting_lives_setting
 		
 		if multiplayer.multiplayer_peer != null:
 			player1.set_multiplayer_authority(1)
-			# Add synchronizer
-			var sync1 = MultiplayerSynchronizer.new()
-			var config1 = SceneReplicationConfig.new()
-			config1.add_property(^":position")
-			sync1.replication_config = config1
-			player1.add_child(sync1)
 
 		# --- SPAWN PLAYER 2 ---
 		player2 = player_scene.instantiate()
 		player2.name = "Player2"
+		
+		# DYNAMIC SCRIPT SWAP: If playing offline, attach the dedicated AI script!
+		if vs_ai_mode:
+			player2.set_script(preload("res://EnemyAI.gd")) # <--- INSTANT SCRIPT SWAP!
+			
 		add_child(player2)
 		player2.position = Vector2(screen_width - 120, screen_height / 2)
-		player2.setup_player(2, vs_ai_mode, p2_selected_character, p2_selected_skill)
-		player2.lives = starting_lives_setting
-		# --- FIXED SAFETY CHECKS ---
-		# Only attempt network authority token handshakes if we are actually online!
+		
+		# Only run peer connections if we are actually online
 		if multiplayer.multiplayer_peer != null:
-			var client_peer_id = 1 
-			if multiplayer.get_peers().size() > 0:
-				client_peer_id = multiplayer.get_peers()[0]
+			var client_peer_id = multiplayer.get_peers()[0] if multiplayer.get_peers().size() > 0 else 1
 			player2.set_multiplayer_authority(client_peer_id)
-		else:
-			player2.set_multiplayer_authority(1)
-			# Add synchronizer
-			var sync2 = MultiplayerSynchronizer.new()
-			var config2 = SceneReplicationConfig.new()
-			config2.add_property(^":position")
-			sync2.replication_config = config2
-			player2.add_child(sync2)
+			
 	# --- ALL MACHINES RUN CODE BELOW (HUD, Visuals, Map) ---
-	# Note: If your setup_player() function handles adding the ColorRect and Colliders, 
-	# make sure it runs inside the Player.gd's _ready() function so the guest gets visuals too!
-	
 	if multiplayer.multiplayer_peer == null or multiplayer.is_server():
 		var min_obs = 3 if selected_map == "Standard Field" else 6
 		var max_obs = 5 if selected_map == "Standard Field" else 9
@@ -460,8 +188,6 @@ func start_match() -> void:
 	game_active = true
 	queue_redraw()
 
-
-# NEW RPC ENGINE: Broadcasts the exact obstacle coordinates from the host PC down to the Guest
 func generate_and_sync_obstacles(screen_width: float, screen_height: float, min_c: int, max_c: int) -> void:
 	var center_x = screen_width / 2
 	var number_of_obstacles = randi_range(min_c, max_c)
@@ -474,13 +200,10 @@ func generate_and_sync_obstacles(screen_width: float, screen_height: float, min_
 		var b_width = randf_range(30.0, 60.0)
 		var b_height = randf_range(50.0, 110.0)
 		
-		# Build it locally on the Host PC screen
 		spawn_local_obstacle(i, pos, Vector2(b_width, b_height))
-		
-		# If online, broadcast these exact sizes and coordinates to the Guest PC instantly
 		if multiplayer.multiplayer_peer != null and multiplayer.is_server():
 			rpc("spawn_local_obstacle", i, pos, Vector2(b_width, b_height))
-			
+
 @rpc("any_peer", "call_remote", "reliable")
 func spawn_local_obstacle(id: int, obs_position: Vector2, obs_size: Vector2) -> void:
 	var obstacle = StaticBody2D.new()
@@ -576,27 +299,39 @@ func setup_hud(screen_width: float) -> void:
 
 func _process(_delta: float) -> void:
 	if not game_active: return
+	
+	# Automatically attach local script pointers if nodes just arrived over the network
+	if player1 == null and has_node("Player1"): player1 = get_node("Player1")
+	if player2 == null and has_node("Player2"): player2 = get_node("Player2")
+	
 	if is_instance_valid(player1):
-		var ammo_info = player1.get_ammo_string()
-		var skill_info = player1.get_ability_status_string()
-		p1_hud_label.text = "  💙 P1 Lives: " + str(player1.lives) + " | HP: " + str(player1.current_health) + "/" + str(player1.max_health) + ammo_info + skill_info
-		p1_ability_bar.value = player1.get_ability_cooldown_percentage() * 100.0
-		for i in range(3): p1_bars[i].value = player1.get_individual_bar_progress(i) * 100.0
+		var ammo_info = player1.get_ammo_string() if player1.has_method("get_ammo_string") else ""
+		var skill_info = player1.get_ability_status_string() if player1.has_method("get_ability_status_string") else ""
+		p1_hud_label.text = "  💙 P1 Lives: " + str(player1.lives) + " | HP: " + str(snappedf(player1.current_health, 0.1)) + "/" + str(player1.max_health) + ammo_info + skill_info
+		if player1.has_method("get_ability_cooldown_percentage"):
+			p1_ability_bar.value = player1.get_ability_cooldown_percentage() * 100.0
+		if player1.has_method("get_individual_bar_progress"):
+			for i in range(3): p1_bars[i].value = player1.get_individual_bar_progress(i) * 100.0
+			
 	if is_instance_valid(player2):
-		var ammo_info = player2.get_ammo_string()
-		var skill_info = player2.get_ability_status_string()
+		var ammo_info = player2.get_ammo_string() if player2.has_method("get_ammo_string") else ""
+		var skill_info = player2.get_ability_status_string() if player2.has_method("get_ability_status_string") else ""
 		p2_hud_label.text = skill_info + ammo_info + " | P2 Lives: " + str(player2.lives) + " | HP: " + str(player2.current_health) + "/" + str(player2.max_health) + " ❤️  "
-		p2_ability_bar.value = player2.get_ability_cooldown_percentage() * 100.0
-		for i in range(3): p2_bars[i].value = player2.get_individual_bar_progress(i) * 100.0
-		
-		
-	################## For debugging - checks guest input#########################
-	############################DELETE LATER######################################
-	if multiplayer.multiplayer_peer != null and multiplayer.is_server():
-		# Check if player2 exists before trying to print its position
-		if has_node("CharacterBody2D") or is_instance_valid(player2):
-			print("Host Node - Guest Player Position: ", player2.position)
-	##################################################################################
+		if player2.has_method("get_ability_cooldown_percentage"):
+			p2_ability_bar.value = player2.get_ability_cooldown_percentage() * 100.0
+		if player2.has_method("get_individual_bar_progress"):
+			for i in range(3): p2_bars[i].value = player2.get_individual_bar_progress(i) * 100.0
+
+func _draw() -> void:
+	var screen_width = get_viewport_rect().size.x
+	var screen_height = get_viewport_rect().size.y
+	var center_x = screen_width / 2.0
+	var center_y = screen_height / 2.0
+	var line_color = Color(0.25, 0.28, 0.35, 0.6)
+	var line_thickness = 4.0
+	
+	draw_line(Vector2(center_x, 0), Vector2(center_x, screen_height), line_color, line_thickness)
+	draw_line(Vector2(0, center_y), Vector2(screen_width, center_y), line_color, line_thickness)
 
 func spawn_hit_particles(hit_position: Vector2, particle_color: Color) -> void:
 	var particles = CPUParticles2D.new()
@@ -616,6 +351,126 @@ func spawn_hit_particles(hit_position: Vector2, particle_color: Color) -> void:
 	particles.color = particle_color
 	get_tree().create_timer(particles.lifetime).timeout.connect(particles.queue_free)
 
+# --- NEW: LOAD THE EDITOR LOBBY VIEW PANEL ---
+func show_lobby_dashboard() -> void:
+	if is_instance_valid(menu_layer):
+		menu_layer.queue_free()
+		
+	menu_layer = CanvasLayer.new()
+	add_child(menu_layer)
+	
+	var lobby_instance = LOBBY_SCENE.instantiate()
+	menu_layer.add_child(lobby_instance)
+	
+	# --- 🎮 CONNECT PLAYER 1 SELECTIONS ---
+	_connect_lobby_button(lobby_instance, "P1Recon", func(): 
+		p1_selected_character = "Recon"
+		update_lobby_abilities(1, "Recon")
+	)
+	_connect_lobby_button(lobby_instance, "P1Slingshotter", func(): 
+		p1_selected_character = "Slingshotter"
+		update_lobby_abilities(1, "Slingshotter")
+	)
+	_connect_lobby_button(lobby_instance, "P1Cowboy", func(): 
+		p1_selected_character = "Cowboy"
+		update_lobby_abilities(1, "Cowboy")
+	)
+	
+	# --- 🎮 CONNECT PLAYER 2 SELECTIONS ---
+	_connect_lobby_button(lobby_instance, "P2Recon", func(): 
+		p2_selected_character = "Recon"
+		update_lobby_abilities(2, "Recon")
+	)
+	_connect_lobby_button(lobby_instance, "P2Slingshotter", func(): 
+		p2_selected_character = "Slingshotter"
+		update_lobby_abilities(2, "Slingshotter")
+	)
+	_connect_lobby_button(lobby_instance, "P2Cowboy", func(): 
+		p2_selected_character = "Cowboy"
+		update_lobby_abilities(2, "Cowboy")
+	)
+	
+	# --- 🌍 CONNECT MAP SELECTIONS ---
+	_connect_lobby_button(lobby_instance, "MapStandard", func(): selected_map = "Standard Field")
+	_connect_lobby_button(lobby_instance, "MapChaos", func(): selected_map = "Obstacle Heavy Chaos")
+	_connect_lobby_button(lobby_instance, "MapPlain", func(): selected_map = "Open Empty Plain")
+	
+	# --- 🔢 CONNECT LIVE STOCKS SELECTIONS ---
+	_connect_lobby_button(lobby_instance, "Lives3", func(): starting_lives_setting = 3; print("Match Stocks: 3"))
+	_connect_lobby_button(lobby_instance, "Lives5", func(): starting_lives_setting = 5; print("Match Stocks: 5"))
+	_connect_lobby_button(lobby_instance, "Lives7", func(): starting_lives_setting = 7; print("Match Stocks: 7"))
+	
+	# Force initial baseline generation so default class abilities display at startup
+	update_lobby_abilities(1, p1_selected_character)
+	update_lobby_abilities(2, p2_selected_character)
+	
+	# --- 🚀 CONNECT START MATCH BUTTON ---
+	var start_btn = lobby_instance.find_child("StartMatchButton", true, false)
+	if start_btn:
+		if multiplayer.multiplayer_peer == null or multiplayer.is_server():
+			start_btn.pressed.connect(_on_setup_finished)
+		else:
+			start_btn.text = "WAITING FOR HOST..."
+			start_btn.disabled = true
+
+# AUTOMATED GENERATOR: Builds styled ability buttons right inside your layout columns!
+func update_lobby_abilities(player_num: int, class_type: String) -> void:
+	if not is_instance_valid(menu_layer) or menu_layer.get_child_count() == 0: return
+	var lobby_instance = menu_layer.get_child(0)
+	
+	var container_name = "P1AbilitiesContainer" if player_num == 1 else "P2AbilitiesContainer"
+	var container = lobby_instance.find_child(container_name, true, false)
+	
+	if not container:
+		print("⚠️ Error: Visual Container not found: ", container_name)
+		return
+		
+	# Clear old ability buttons instantly
+	for child in container.get_children():
+		child.queue_free()
+		
+	# Filter appropriate perks list
+	var valid_skills: Array[String] = []
+	match class_type:
+		"Recon": valid_skills = ["Recons Eye", "Recons Will"]
+		"Slingshotter": valid_skills = ["Piercing Shot", "Bouncing Shot"]
+		"Cowboy": valid_skills = ["Marksman", "Jerry Miculek"]
+		
+	# Apply local default string selections safely
+	if player_num == 1: p1_selected_skill = valid_skills[0]
+	else: p2_selected_skill = valid_skills[0]
+	
+	# Generate buttons into the VBox dynamically
+	for skill in valid_skills:
+		var btn = Button.new()
+		btn.text = skill
+		btn.custom_minimum_size = Vector2(180, 40)
+		btn.add_theme_font_size_override("font_size", 14)
+		btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		
+		btn.pressed.connect(func():
+			if player_num == 1: p1_selected_skill = skill
+			else: p2_selected_skill = skill
+			print("Player ", player_num, " selected ability option: ", skill)
+		)
+		container.add_child(btn)
+
+func _on_setup_finished() -> void:
+	# Wipes the Lobby selection overlay screen completely out of memory
+	if is_instance_valid(menu_layer):
+		menu_layer.queue_free()
+		
+	# Offline mode branch versus the Computer Bot
+	if vs_ai_mode or multiplayer.multiplayer_peer == null:
+		start_match()
+	else:
+		# If online P2P host, broadcast selected parameters across the school network switches!
+		print("📡 Host launching match. Distributing rules payload across LAN network sockets...")
+		rpc("sync_lobby_and_start", selected_map, starting_lives_setting, p1_selected_character, p1_selected_skill, p2_selected_character, p2_selected_skill)
+
+func _connect_lobby_button(parent_node: Node, btn_name: String, callback: Callable) -> void:
+	var btn = parent_node.find_child(btn_name, true, false)
+	if btn: btn.pressed.connect(callback)
 func trigger_game_over(eliminated_player_id: int) -> void:
 	game_active = false
 	var winner_id = 2 if eliminated_player_id == 1 else 1
@@ -638,12 +493,67 @@ func trigger_game_over(eliminated_player_id: int) -> void:
 	restart_label.add_theme_font_size_override("font_size", 20)
 	vbox.add_child(restart_label)
 
+func spawn_crit_hit_marker(hit_position: Vector2) -> void:
+	# 1. Instantiate a fresh UI Label node out of active memory
+	var marker = Label.new()
+	marker.text = "💥 CRIT!"
+	marker.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	add_child(marker)
+	
+	# 2. Position it exactly at the impact point (shifted slightly up to center it)
+	marker.global_position = hit_position + Vector2(-30, -20)
+	
+	# 3. Apply eye-catching, glowing arcade text overrides
+	marker.add_theme_font_size_override("font_size", 24)
+	marker.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2)) # Glowing Golden Yellow
+	marker.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0)) # Black border outline
+	marker.add_theme_constant_override("outline_size", 6)
+	
+	# 4. CREATE AN ANIMATED TWEEN SEQUENCE
+	# This smoothly slides the text up and fades it out over half a second
+	var tween = create_tween().set_parallel(true)
+	
+	# Animate position upward over 0.5 seconds
+	tween.tween_property(marker, "global_position", marker.global_position + Vector2(0, -50), 0.5)
+	
+	# Fade opacity down to 0 (completely transparent) over 0.5 seconds
+	tween.tween_property(marker, "modulate:a", 0.0, 0.5)
+	
+	# 5. AUTOMATIC MEMORY CLEANUP
+	# Delete the node from the running game world the exact moment the animation finishes
+	tween.chain().tween_callback(marker.queue_free)
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed:
 		if event.keycode == KEY_R:
-			# FIXED: Safely wipe network connections before reloading to prevent Host crash
 			if multiplayer.multiplayer_peer != null:
 				multiplayer.multiplayer_peer.close()
 				multiplayer.multiplayer_peer = null
-			print("🔄 Safely cleaning up network sessions... Returning to Menu.")
 			get_tree().reload_current_scene()
+
+func get_my_local_ip() -> String:
+	var addresses = IP.get_local_addresses()
+	
+	# PRIORITY 1: Force find your exact high school lab network sequence
+	for ip in addresses:
+		if ip.begins_with("10.220."):
+			return ip
+			
+	# PRIORITY 2: Standard school LAN ranges
+	for ip in addresses:
+		if not ":" in ip and ip != "127.0.0.1":
+			if ip.begins_with("10.") or ip.begins_with("172."):
+				return ip
+				
+	# PRIORITY 3: Home routers or fallbacks (skipping known virtual networks if possible)
+	for ip in addresses:
+		if not ":" in ip and ip != "127.0.0.1":
+			if ip.begins_with("192.168.") and not ip.contains(".145."):
+				return ip
+				
+	# Final fallback catch-all loop
+	for ip in addresses:
+		if not ":" in ip and ip != "127.0.0.1":
+			return ip
+			
+	return "127.0.0.1"
