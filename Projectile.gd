@@ -66,77 +66,96 @@ func _physics_process(delta: float) -> void:
 	
 	var is_tracking_bullet = (damage_type == "tracking_normal")
 	
+	# --- 🤠 RESTORED: FIXED POSITION MARKSMAN LOCK ---
 	if damage_type == "marksman_normal" and is_instance_valid(enemy):
+		# Capture the target coordinates ONLY ONCE when crossing the center lane threshold
 		if target_initial_y == -999.0 and abs(position.x - 576.0) < 200.0:
-			velocity_vector = global_position.direction_to(enemy.global_position).normalized()
-			rotation = velocity_vector.angle()
+			# FIX: Save the entire stationary 2D position vector where the enemy is standing right now!
+			# We use a custom metadata slot to freeze this vector permanently
+			set_meta("marksman_target_pos", enemy.global_position)
 			marksman_redirected = true
+		
 		if marksman_redirected:
 			is_tracking_bullet = true
 
-	# --- 🎯 SMOOTH ARC STEERING & RECOVERY ---
-	if is_tracking_bullet and is_instance_valid(enemy):
-		var target_dir = global_position.direction_to(enemy.global_position)
-		var avoidance_force = Vector2.ZERO
+	# --- 🛡️ UNIVERSAL SMOOTH STEERING & RECOVERY MATRIX ---
+	if is_tracking_bullet:
+		var target_dir = Vector2.ZERO
 		
-		for child in arena.get_children():
-			if child.name.begins_with("Obstacle_"):
-				var dist = global_position.distance_to(child.global_position)
-				if dist < 110.0:
-					var approach_check = velocity_vector.dot(global_position.direction_to(child.global_position))
-					if approach_check > 0.0:
-						var away_dir = child.global_position.direction_to(global_position)
-						var strength = (110.0 - dist) / 110.0
-						avoidance_force += away_dir * strength * 3.5
-		var final_steering_dir = (target_dir + avoidance_force).normalized()
-		velocity_vector = velocity_vector.move_toward(final_steering_dir, delta * 6.0).normalized()
-		rotation = velocity_vector.angle()
+		# RECON KIT: Heat-seeking tracking checks enemy coordinates live
+		if damage_type == "tracking_normal" and is_instance_valid(enemy):
+			target_dir = global_position.direction_to(enemy.global_position).normalized()
+		# COWBOY KIT: Marksman guides itself strictly to the frozen historical coordinates!
+		elif damage_type == "marksman_normal" and has_meta("marksman_target_pos"):
+			var fixed_pos = get_meta("marksman_target_pos")
+			target_dir = global_position.direction_to(fixed_pos).normalized()
+			
+			# If the bullet reaches its target height, let it cruise forward naturally on its axis
+			if global_position.distance_to(fixed_pos) < 20.0 or (direction > 0 and global_position.x > fixed_pos.x) or (direction < 0 and global_position.x < fixed_pos.x):
+				is_tracking_bullet = false # Turn off steering so it flies straight out
+		
+		# Only process steering if we have a valid target path locked
+		if target_dir != Vector2.ZERO:
+			# 2. Obstacle Evasion Radar
+			var avoidance_force = Vector2.ZERO
+			for child in arena.get_children():
+				if child.name.begins_with("Obstacle_"):
+					var dist = global_position.distance_to(child.global_position)
+					if dist < 110.0:
+						var approach_check = velocity_vector.dot(global_position.direction_to(child.global_position))
+						if approach_check > 0.0:
+							var away_dir = child.global_position.direction_to(global_position)
+							var strength = (110.0 - dist) / 110.0
+							avoidance_force += away_dir * strength * 4.0
 
-	# --- UNIFIED FLIGHT VECTOR MOTION ---
+			# 3. Combine trajectory pull and avoidance push seamlessly
+			var final_steering_dir = (target_dir + avoidance_force).normalized()
+			
+			# 4. Smooth turning calculation
+			var turn_weight = 8.0 if damage_type == "marksman_normal" else 5.0
+			velocity_vector = velocity_vector.move_toward(final_steering_dir, delta * turn_weight).normalized()
+			rotation = velocity_vector.angle()
+
+	# --- UNIFIED FLIGHT MOTION PHYSICS ---
 	global_position += velocity_vector * speed * delta
 	
 	var view_size = get_viewport_rect().size
 	
-	# --- 🌍 NEW: BOUNCING SHOT WALL INTERSECTION DETECTOR ---
+	# --- SLINGSHOTTER BOUNCING SHOT ENGINE ---
 	if damage_type == "bouncing_normal":
 		var hit_wall = false
-		
-		# Bounce off Top and Bottom screen borders safely
 		if global_position.y <= 15.0:
 			global_position.y = 15.0
-			velocity_vector.y = abs(velocity_vector.y) # Bounce downwards
+			velocity_vector.y = abs(velocity_vector.y)
 			hit_wall = true
 		elif global_position.y >= view_size.y - 15.0:
 			global_position.y = view_size.y - 15.0
-			velocity_vector.y = -abs(velocity_vector.y) # Bounce upwards
+			velocity_vector.y = -abs(velocity_vector.y)
 			hit_wall = true
 			
-		# Bounce off Left and Right outer map border walls safely
 		if global_position.x <= 15.0:
 			global_position.x = 15.0
-			velocity_vector.x = abs(velocity_vector.x) # Bounce right
+			velocity_vector.x = abs(velocity_vector.x)
 			hit_wall = true
 		elif global_position.x >= view_size.x - 15.0:
 			global_position.x = view_size.x - 15.0
-			velocity_vector.x = -abs(velocity_vector.x) # Bounce left
+			velocity_vector.x = -abs(velocity_vector.x)
 			hit_wall = true
 			
 		if hit_wall:
 			bounce_count += 1
 			rotation = velocity_vector.angle()
-			
-			# Trigger a visual spark burst at the bounce position
 			if arena.has_method("spawn_hit_particles"):
 				arena.spawn_hit_particles(global_position, Color(1.0, 1.0, 1.0))
-				
-			# If it completes 3 ricochets, remove the bullet from memory
 			if bounce_count >= max_bounces:
 				queue_free()
 				return
 	else:
-		# Standard bullet boundary cleanup rule
+		# Standard boundary cleanup rule
 		if position.x < -50 or position.x > view_size.x + 50 or position.y < -50 or position.y > view_size.y + 50:
 			queue_free()
+
+
 
 func _on_body_entered(body: Node) -> void:
 	if body.name.begins_with("Obstacle_"):
@@ -146,9 +165,21 @@ func _on_body_entered(body: Node) -> void:
 
 	if body.has_method("take_damage"):
 		if body.player_id != attacker_id:
-			var is_special = damage_type.contains("special")
-			var damage_val = 1
-			if damage_type == "special": damage_val = 2
+			# Safely extract the custom damage values and critical modifiers we attached [0.1]
+			var damage_val = 1.0
+			var is_crit = false
 			
-			body.take_damage(damage_val, is_special)
+			if has_meta("damage_amount"):
+				damage_val = get_meta("damage_amount")
+			if has_meta("is_critical"):
+				is_crit = get_meta("is_critical")
+				
+			# If a normal bullet didn't register custom metadata, fall back to default rules
+			if not has_meta("damage_amount"):
+				if damage_type == "special": damage_val = 2.0
+				
+			var is_special = damage_type.contains("special")
+			
+			# Deliver the precise floating point damage payload!
+			body.take_damage(damage_val, is_special, is_crit)
 			queue_free()

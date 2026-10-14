@@ -125,9 +125,15 @@ func start_match() -> void:
 		# --- SPAWN PLAYER 2 ---
 		player2 = player_scene.instantiate()
 		player2.name = "Player2"
-		add_child(player2) # MultiplayerSpawner automatically copies this to the guest!
+		
+		# DYNAMIC SCRIPT SWAP: If playing offline, attach the dedicated AI script!
+		if vs_ai_mode:
+			player2.set_script(preload("res://EnemyAI.gd")) # <--- INSTANT SCRIPT SWAP!
+			
+		add_child(player2)
 		player2.position = Vector2(screen_width - 120, screen_height / 2)
 		
+		# Only run peer connections if we are actually online
 		if multiplayer.multiplayer_peer != null:
 			var client_peer_id = multiplayer.get_peers()[0] if multiplayer.get_peers().size() > 0 else 1
 			player2.set_multiplayer_authority(client_peer_id)
@@ -262,7 +268,7 @@ func _process(_delta: float) -> void:
 	if is_instance_valid(player1):
 		var ammo_info = player1.get_ammo_string() if player1.has_method("get_ammo_string") else ""
 		var skill_info = player1.get_ability_status_string() if player1.has_method("get_ability_status_string") else ""
-		p1_hud_label.text = "  💙 P1 Lives: " + str(player1.lives) + " | HP: " + str(player1.current_health) + "/" + str(player1.max_health) + ammo_info + skill_info
+		p1_hud_label.text = "  💙 P1 Lives: " + str(player1.lives) + " | HP: " + str(snappedf(player1.current_health, 0.1)) + "/" + str(player1.max_health) + ammo_info + skill_info
 		if player1.has_method("get_ability_cooldown_percentage"):
 			p1_ability_bar.value = player1.get_ability_cooldown_percentage() * 100.0
 		if player1.has_method("get_individual_bar_progress"):
@@ -317,59 +323,99 @@ func show_lobby_dashboard() -> void:
 	var lobby_instance = LOBBY_SCENE.instantiate()
 	menu_layer.add_child(lobby_instance)
 	
-	# Hook up all column layout buttons to our choice tracking string slots [0.1]
-	_connect_lobby_button(lobby_instance, "P1Recon", func(): p1_selected_character = "Recon"; p1_selected_skill = "Recons Eye")
-	_connect_lobby_button(lobby_instance, "P1Slingshotter", func(): p1_selected_character = "Slingshotter"; p1_selected_skill = "Piercing Shot")
-	_connect_lobby_button(lobby_instance, "P1Cowboy", func(): p1_selected_character = "Cowboy"; p1_selected_skill = "Marksman")
+	# --- 🎮 CONNECT PLAYER 1 SELECTIONS ---
+	_connect_lobby_button(lobby_instance, "P1Recon", func(): 
+		p1_selected_character = "Recon"
+		update_lobby_abilities(1, "Recon")
+	)
+	_connect_lobby_button(lobby_instance, "P1Slingshotter", func(): 
+		p1_selected_character = "Slingshotter"
+		update_lobby_abilities(1, "Slingshotter")
+	)
+	_connect_lobby_button(lobby_instance, "P1Cowboy", func(): 
+		p1_selected_character = "Cowboy"
+		update_lobby_abilities(1, "Cowboy")
+	)
 	
-	_connect_lobby_button(lobby_instance, "P2Recon", func(): p2_selected_character = "Recon"; p2_selected_skill = "Recons Eye")
-	_connect_lobby_button(lobby_instance, "P2Slingshotter", func(): p2_selected_character = "Slingshotter"; p2_selected_skill = "Piercing Shot")
-	_connect_lobby_button(lobby_instance, "P2Cowboy", func(): p2_selected_character = "Cowboy"; p2_selected_skill = "Marksman")
+	# --- 🎮 CONNECT PLAYER 2 SELECTIONS ---
+	_connect_lobby_button(lobby_instance, "P2Recon", func(): 
+		p2_selected_character = "Recon"
+		update_lobby_abilities(2, "Recon")
+	)
+	_connect_lobby_button(lobby_instance, "P2Slingshotter", func(): 
+		p2_selected_character = "Slingshotter"
+		update_lobby_abilities(2, "Slingshotter")
+	)
+	_connect_lobby_button(lobby_instance, "P2Cowboy", func(): 
+		p2_selected_character = "Cowboy"
+		update_lobby_abilities(2, "Cowboy")
+	)
 	
+	# --- 🌍 CONNECT MAP SELECTIONS ---
 	_connect_lobby_button(lobby_instance, "MapStandard", func(): selected_map = "Standard Field")
 	_connect_lobby_button(lobby_instance, "MapChaos", func(): selected_map = "Obstacle Heavy Chaos")
 	_connect_lobby_button(lobby_instance, "MapPlain", func(): selected_map = "Open Empty Plain")
 	
+	# --- 🔢 CONNECT LIVE STOCKS SELECTIONS ---
+	_connect_lobby_button(lobby_instance, "Lives3", func(): starting_lives_setting = 3; print("Match Stocks: 3"))
+	_connect_lobby_button(lobby_instance, "Lives5", func(): starting_lives_setting = 5; print("Match Stocks: 5"))
+	_connect_lobby_button(lobby_instance, "Lives7", func(): starting_lives_setting = 7; print("Match Stocks: 7"))
+	
+	# Force initial baseline generation so default class abilities display at startup
+	update_lobby_abilities(1, p1_selected_character)
+	update_lobby_abilities(2, p2_selected_character)
+	
+	# --- 🚀 CONNECT START MATCH BUTTON ---
 	var start_btn = lobby_instance.find_child("StartMatchButton", true, false)
 	if start_btn:
-		# Only allow the Host to launch the game across the network switches
 		if multiplayer.multiplayer_peer == null or multiplayer.is_server():
 			start_btn.pressed.connect(_on_setup_finished)
 		else:
 			start_btn.text = "WAITING FOR HOST..."
 			start_btn.disabled = true
+
+# AUTOMATED GENERATOR: Builds styled ability buttons right inside your layout columns!
 func update_lobby_abilities(player_num: int, class_type: String) -> void:
-	var container = p1_abilities_box if player_num == 1 else p2_abilities_box
-	if not is_instance_valid(container): return
+	if not is_instance_valid(menu_layer) or menu_layer.get_child_count() == 0: return
+	var lobby_instance = menu_layer.get_child(0)
 	
-	# Wipe old buttons instantly
+	var container_name = "P1AbilitiesContainer" if player_num == 1 else "P2AbilitiesContainer"
+	var container = lobby_instance.find_child(container_name, true, false)
+	
+	if not container:
+		print("⚠️ Error: Visual Container not found: ", container_name)
+		return
+		
+	# Clear old ability buttons instantly
 	for child in container.get_children():
 		child.queue_free()
 		
+	# Filter appropriate perks list
 	var valid_skills: Array[String] = []
 	match class_type:
 		"Recon": valid_skills = ["Recons Eye", "Recons Will"]
 		"Slingshotter": valid_skills = ["Piercing Shot", "Bouncing Shot"]
 		"Cowboy": valid_skills = ["Marksman", "Jerry Miculek"]
 		
-	# Assign local defaults safely
+	# Apply local default string selections safely
 	if player_num == 1: p1_selected_skill = valid_skills[0]
 	else: p2_selected_skill = valid_skills[0]
 	
-	# Create interactive, styled buttons for the available abilities
+	# Generate buttons into the VBox dynamically
 	for skill in valid_skills:
 		var btn = Button.new()
 		btn.text = skill
-		btn.custom_minimum_size = Vector2(160, 40)
+		btn.custom_minimum_size = Vector2(180, 40)
 		btn.add_theme_font_size_override("font_size", 14)
 		btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		
 		btn.pressed.connect(func():
 			if player_num == 1: p1_selected_skill = skill
 			else: p2_selected_skill = skill
-			print("Player ", player_num, " selected skill: ", skill)
+			print("Player ", player_num, " selected ability option: ", skill)
 		)
 		container.add_child(btn)
+
 func _on_setup_finished() -> void:
 	# Wipes the Lobby selection overlay screen completely out of memory
 	if is_instance_valid(menu_layer):
@@ -407,6 +453,36 @@ func trigger_game_over(eliminated_player_id: int) -> void:
 	restart_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	restart_label.add_theme_font_size_override("font_size", 20)
 	vbox.add_child(restart_label)
+
+func spawn_crit_hit_marker(hit_position: Vector2) -> void:
+	# 1. Instantiate a fresh UI Label node out of active memory
+	var marker = Label.new()
+	marker.text = "💥 CRIT!"
+	marker.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	add_child(marker)
+	
+	# 2. Position it exactly at the impact point (shifted slightly up to center it)
+	marker.global_position = hit_position + Vector2(-30, -20)
+	
+	# 3. Apply eye-catching, glowing arcade text overrides
+	marker.add_theme_font_size_override("font_size", 24)
+	marker.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2)) # Glowing Golden Yellow
+	marker.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0)) # Black border outline
+	marker.add_theme_constant_override("outline_size", 6)
+	
+	# 4. CREATE AN ANIMATED TWEEN SEQUENCE
+	# This smoothly slides the text up and fades it out over half a second
+	var tween = create_tween().set_parallel(true)
+	
+	# Animate position upward over 0.5 seconds
+	tween.tween_property(marker, "global_position", marker.global_position + Vector2(0, -50), 0.5)
+	
+	# Fade opacity down to 0 (completely transparent) over 0.5 seconds
+	tween.tween_property(marker, "modulate:a", 0.0, 0.5)
+	
+	# 5. AUTOMATIC MEMORY CLEANUP
+	# Delete the node from the running game world the exact moment the animation finishes
+	tween.chain().tween_callback(marker.queue_free)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed:
