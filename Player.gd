@@ -76,33 +76,36 @@ func setup_player(id: int, brain_enabled: bool, chosen_class: String, chosen_abi
 	time_since_last_ability = active_ability_cooldown_time
 	ai_target_vector = position
 
+# Inside Player.gd -> Update the visual assignment blocks inside _ready():
+
 func _ready() -> void:
-	# Wait one frame for the network handshake system to finish setting tokens
-	await get_tree().process_frame
+	if multiplayer.multiplayer_peer != null:
+		await get_tree().process_frame
 	
 	var arena = get_parent()
 	if not is_instance_valid(arena): return
 	
-	if multiplayer.multiplayer_peer != null:
-		await get_tree().process_frame
+	# Fetch the existing ColorRect child node you dragged into your Player.tscn in the editor
+	var visual_box = get_node_or_null("ColorRect")
 	
-	# (Your existing arena extraction and setup logic continues here identically...)
-	if not is_instance_valid(arena): return
-
-	# Determine character specifications from our spawned name node identity
 	if name == "Player1":
 		setup_player(1, false, arena.p1_selected_character, arena.p1_selected_skill)
 		lives = arena.starting_lives_setting
 		current_health = max_health
-		# Set ColorRect child tint for Player 1
-		$ColorRect.color = Color(0.2, 0.6, 1.0) # Radiant blue
+		
+		# Tint the editor box blue cleanly
+		if visual_box: visual_box.color = Color(0.2, 0.6, 1.0)
+		
 	elif name == "Player2":
 		setup_player(2, arena.vs_ai_mode, arena.p2_selected_character, arena.p2_selected_skill)
 		lives = arena.starting_lives_setting
 		current_health = max_health
-		$ColorRect.color = Color(1.0, 0.3, 0.3) # Crimson red
-
+		
+		# Tint the editor box red cleanly
+		if visual_box: visual_box.color = Color(1.0, 0.3, 0.3)
+		
 	print("✅ Hybrid Player Initialized over LAN Spawner: ", name)
+
 
 func _physics_process(delta: float) -> void:
 	# P2P NETWORK SHIELD: Drop computing inputs if this machine does not own this specific character block!

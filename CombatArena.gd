@@ -117,11 +117,11 @@ func _on_join_pressed(target_ip: String) -> void:
 	if is_instance_valid(menu_layer): menu_layer.queue_free()
 	print("🔌 Guest connected. Waiting for Host to select characters and launch...")
 
-
 func _on_peer_connected(id: int) -> void:
-	print("✅ Peer connected successfully! ID: ", id)
+	print("✅ Peer connected successfully! Assigned Network ID: ", id)
+	# Do NOT auto-launch here anymore! Let them wait in the lobby.
 	if multiplayer.is_server():
-		rpc("sync_lobby_and_start", selected_map, starting_lives_setting, p1_selected_character, p1_selected_skill, p2_selected_character, p2_selected_skill)
+		print("📡 Host is ruling the lobby. Waiting for Host to hit START...")
 
 func _on_peer_disconnected(id: int) -> void:
 	print("🚨 Peer client disconnected: ", id)
@@ -464,8 +464,8 @@ func _on_setup_finished() -> void:
 	if vs_ai_mode or multiplayer.multiplayer_peer == null:
 		start_match()
 	else:
-		# If online P2P host, broadcast selected parameters across the school network switches!
-		print("📡 Host launching match. Distributing rules payload across LAN network sockets...")
+		# ONLINE LAN MODE: The Host clicks START, sending the game launch signal to the Guest!
+		print("📡 Host clicked START. Distributing rules payload across LAN network sockets...")
 		rpc("sync_lobby_and_start", selected_map, starting_lives_setting, p1_selected_character, p1_selected_skill, p2_selected_character, p2_selected_skill)
 
 func _connect_lobby_button(parent_node: Node, btn_name: String, callback: Callable) -> void:
