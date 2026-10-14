@@ -95,7 +95,9 @@ func show_main_menu_overlay() -> void:
 
 func _on_offline_pressed() -> void:
 	vs_ai_mode = true
-	show_lobby_dashboard()
+	# Directly run our master layout loop locally since we are offline [0.1]
+	sync_lobby_and_start(selected_map, starting_lives_setting, p1_selected_character, p1_selected_skill, p2_selected_character, p2_selected_skill)
+	print("🎮 Offline Match Started vs AI Bot.")
 
 func _on_host_pressed() -> void:
 	var peer = ENetMultiplayerPeer.new()
@@ -131,6 +133,10 @@ func _on_peer_disconnected(id: int) -> void:
 		multiplayer.multiplayer_peer = null
 	get_tree().reload_current_scene()
 
+# Inside CombatArena.gd -> Replace your sync_lobby_and_start function entirely:
+
+# Inside CombatArena.gd -> Replace your sync_lobby_and_start function entirely:
+
 @rpc("any_peer", "call_local", "reliable")
 func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 	selected_map = m_map
@@ -140,53 +146,57 @@ func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 	p2_selected_character = p2_c
 	p2_selected_skill = p2_s
 	
-	start_match()
-
-# --- 3. ARENA GENERATION & LIVE COMBAT ---
-func start_match() -> void:
+	# Clear the character selector dashboard on BOTH host and guest terminals!
+	if is_instance_valid(menu_layer):
+		menu_layer.queue_free()
+		
+	# --- NEW: CLIENT-SIDE LOCAL VISUALS INITIALIZATION ---
 	var screen_width = get_viewport_rect().size.x
 	var screen_height = get_viewport_rect().size.y
 	
-	# Preload the scene instead of constructing nodes manually
-	var player_scene = preload("res://Player.tscn")
+	# 1. Clear any old code-clutter and re-draw the dark background ColorRect visually on the Guest PC
+	if not has_node("Background"):
+		var bg = ColorRect.new()
+		bg.name = "Background"
+		bg.size = Vector2(1152, 648)
+		bg.color = Color(0.08, 0.09, 0.12)
+		add_child(bg)
+		move_child(bg, 0) # Force it behind everything else [0.1]
 	
-	# ONLY THE HOST/SERVER SPAWNS THE PHYSICAL NODES
-	if multiplayer.is_server() or multiplayer.multiplayer_peer == null:
-		# --- SPAWN PLAYER 1 ---
+	# 2. Build the visual interface and HUD lines locally on both screens!
+	setup_hud(screen_width)
+	game_active = true
+	queue_redraw() # Re-draw the 4-quadrant split lines on the Guest monitor
+	
+	# 3. Hand off the physical character spawning strictly to the Master Host Machine
+	if multiplayer.multiplayer_peer == null or multiplayer.is_server():
+		var player_scene = preload("res://Player.tscn")
+		
+		# Spawn Player 1 Node
 		player1 = player_scene.instantiate()
 		player1.name = "Player1"
-		add_child(player1) # MultiplayerSpawner automatically copies this to the guest!
+		add_child(player1)
 		player1.position = Vector2(120, screen_height / 2)
 		
 		if multiplayer.multiplayer_peer != null:
 			player1.set_multiplayer_authority(1)
 
-		# --- SPAWN PLAYER 2 ---
+		# Spawn Player 2 Node
 		player2 = player_scene.instantiate()
 		player2.name = "Player2"
-		
-		# DYNAMIC SCRIPT SWAP: If playing offline, attach the dedicated AI script!
-		if vs_ai_mode:
-			player2.set_script(preload("res://EnemyAI.gd")) # <--- INSTANT SCRIPT SWAP!
-			
 		add_child(player2)
 		player2.position = Vector2(screen_width - 120, screen_height / 2)
 		
-		# Only run peer connections if we are actually online
 		if multiplayer.multiplayer_peer != null:
 			var client_peer_id = multiplayer.get_peers()[0] if multiplayer.get_peers().size() > 0 else 1
 			player2.set_multiplayer_authority(client_peer_id)
 			
-	# --- ALL MACHINES RUN CODE BELOW (HUD, Visuals, Map) ---
-	if multiplayer.multiplayer_peer == null or multiplayer.is_server():
+		# Host spawns the map obstacles and uses the spawner to mirror them down [0.1]
 		var min_obs = 3 if selected_map == "Standard Field" else 6
 		var max_obs = 5 if selected_map == "Standard Field" else 9
 		if selected_map != "Open Empty Plain":
 			generate_and_sync_obstacles(screen_width, screen_height, min_obs, max_obs)
-	
-	setup_hud(screen_width)
-	game_active = true
-	queue_redraw()
+
 
 func generate_and_sync_obstacles(screen_width: float, screen_height: float, min_c: int, max_c: int) -> void:
 	var center_x = screen_width / 2
@@ -456,15 +466,9 @@ func update_lobby_abilities(player_num: int, class_type: String) -> void:
 		container.add_child(btn)
 
 func _on_setup_finished() -> void:
-	# Wipes the Lobby selection overlay screen completely out of memory
-	if is_instance_valid(menu_layer):
-		menu_layer.queue_free()
-		
-	# Offline mode branch versus the Computer Bot
 	if vs_ai_mode or multiplayer.multiplayer_peer == null:
-		start_match()
+		_on_offline_pressed()
 	else:
-		# ONLINE LAN MODE: The Host clicks START, sending the game launch signal to the Guest!
 		print("📡 Host clicked START. Distributing rules payload across LAN network sockets...")
 		rpc("sync_lobby_and_start", selected_map, starting_lives_setting, p1_selected_character, p1_selected_skill, p2_selected_character, p2_selected_skill)
 

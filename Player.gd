@@ -110,7 +110,7 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	# P2P NETWORK SHIELD: Drop computing inputs if this machine does not own this specific character block!
 	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():
-		return
+		return # Instantly freezes input reading for the remote character block [0.1]
 		
 	time_since_last_normal += delta
 	time_since_last_ability += delta
