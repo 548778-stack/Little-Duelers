@@ -79,32 +79,30 @@ func setup_player(id: int, brain_enabled: bool, chosen_class: String, chosen_abi
 # Inside Player.gd -> Update the visual assignment blocks inside _ready():
 
 func _ready() -> void:
-	if multiplayer.multiplayer_peer != null:
-		await get_tree().process_frame
+	# Wait for network tokens to finish syncing up completely
+	await get_tree().process_frame
 	
 	var arena = get_parent()
 	if not is_instance_valid(arena): return
 	
-	# Fetch the existing ColorRect child node you dragged into your Player.tscn in the editor
 	var visual_box = get_node_or_null("ColorRect")
 	
 	if name == "Player1":
 		setup_player(1, false, arena.p1_selected_character, arena.p1_selected_skill)
 		lives = arena.starting_lives_setting
 		current_health = max_health
-		
-		# Tint the editor box blue cleanly
-		if visual_box: visual_box.color = Color(0.2, 0.6, 1.0)
+		if visual_box: visual_box.color = Color(0.2, 0.6, 1.0) # Radiant Blue Tint
 		
 	elif name == "Player2":
-		setup_player(2, arena.vs_ai_mode, arena.p2_selected_character, arena.p2_selected_skill)
+		# Read if it's an offline bot or online human player
+		var brain_mode = arena.vs_ai_mode
+		setup_player(2, brain_mode, arena.p2_selected_character, arena.p2_selected_skill)
 		lives = arena.starting_lives_setting
 		current_health = max_health
-		
-		# Tint the editor box red cleanly
-		if visual_box: visual_box.color = Color(1.0, 0.3, 0.3)
-		
-	print("✅ Hybrid Player Initialized over LAN Spawner: ", name)
+		if visual_box: visual_box.color = Color(1.0, 0.3, 0.3) # Crimson Red Tint
+
+	print("✅ Character Handshake Complete: ", name, " | Authority ID: ", get_multiplayer_authority())
+
 
 
 func _physics_process(delta: float) -> void:

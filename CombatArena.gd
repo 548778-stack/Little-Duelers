@@ -121,9 +121,11 @@ func _on_join_pressed(target_ip: String) -> void:
 
 func _on_peer_connected(id: int) -> void:
 	print("✅ Peer connected successfully! Assigned Network ID: ", id)
-	# Do NOT auto-launch here anymore! Let them wait in the lobby.
+	
 	if multiplayer.is_server():
-		print("📡 Host is ruling the lobby. Waiting for Host to hit START...")
+		print("📡 Host detected Guest connection. Opening Lobby Dashboard on their terminal...")
+		# RPC Call: Instantly forces the Guest's computer to slide open the Lobby selection screen!
+		rpc("show_lobby_dashboard_remote")
 
 func _on_peer_disconnected(id: int) -> void:
 	print("🚨 Peer client disconnected: ", id)
@@ -172,26 +174,35 @@ func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 	if multiplayer.multiplayer_peer == null or multiplayer.is_server():
 		var player_scene = preload("res://Player.tscn")
 		
-		# Spawn Player 1 Node
+		# --- SPAWN PLAYER 1 ---
 		player1 = player_scene.instantiate()
 		player1.name = "Player1"
-		add_child(player1)
+		add_child(player1) # Spawner duplicates this to the guest automatically!
 		player1.position = Vector2(120, screen_height / 2)
 		
-		if multiplayer.multiplayer_peer != null:
-			player1.set_multiplayer_authority(1)
-
-		# Spawn Player 2 Node
+		# --- SPAWN PLAYER 2 ---
 		player2 = player_scene.instantiate()
 		player2.name = "Player2"
-		add_child(player2)
+		add_child(player2) # Spawner duplicates this to the guest automatically!
 		player2.position = Vector2(screen_width - 120, screen_height / 2)
 		
+		# 🛡️ THE P2P NETWORK HANDSHAKE BUFFER SHIELD
+		# We wait exactly one frame to allow the MultiplayerSpawner to finish mirroring 
+		# the raw nodes across the LAN network before assigning hardware authority tokens!
 		if multiplayer.multiplayer_peer != null:
+			await get_tree().process_frame
+			
+			# Host machine holds absolute authority over Player 1 (Blue)
+			player1.set_multiplayer_authority(1)
+			
+			# Fetch the Guest's network peer ID safely
 			var client_peer_id = multiplayer.get_peers()[0] if multiplayer.get_peers().size() > 0 else 1
+			# Grant absolute hardware control over Player 2 (Red) directly to the Guest computer!
 			player2.set_multiplayer_authority(client_peer_id)
 			
-		# Host spawns the map obstacles and uses the spawner to mirror them down [0.1]
+			print("📡 Network Authority Synchronized: P1 -> Host(1) | P2 -> Guest(", client_peer_id, ")")
+			
+		# Host spawns the map obstacles and uses the spawner to mirror them down
 		var min_obs = 3 if selected_map == "Standard Field" else 6
 		var max_obs = 5 if selected_map == "Standard Field" else 9
 		if selected_map != "Open Empty Plain":
@@ -422,6 +433,11 @@ func show_lobby_dashboard() -> void:
 		else:
 			start_btn.text = "WAITING FOR HOST..."
 			start_btn.disabled = true
+
+@rpc("any_peer", "call_local", "reliable")
+func show_lobby_dashboard_remote() -> void:
+	show_lobby_dashboard() # 🔌 Fixed! Now the Guest's screen will open the lobby!
+
 
 # AUTOMATED GENERATOR: Builds styled ability buttons right inside your layout columns!
 func update_lobby_abilities(player_num: int, class_type: String) -> void:
