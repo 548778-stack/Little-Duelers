@@ -1,3 +1,11 @@
+#cd "S:\My Documents\little-duelers"
+# git add .
+# git commit -m "message"
+#git push
+
+# cd #cd other location
+# git pull
+
 extends CharacterBody2D
 
 @export var speed: float = 500.0
