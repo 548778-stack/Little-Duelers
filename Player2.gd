@@ -22,12 +22,25 @@ var selected_ability: String = "None"
 var normal_cooldown_time: float = 0.4    
 var time_since_last_normal: float = 0.0  
 
+# Inside Player2.gd -> Update your _ready() loop:
+
 func _ready() -> void:
+	# 🛡️ Wait 2 frames to ensure the server has fully assigned peer tokens across the LAN wire
 	await get_tree().process_frame
+	await get_tree().process_frame
+	
 	var arena = get_parent()
 	if not is_instance_valid(arena): return
 	
-	# Configure Player 2 configurations from the synchronized arena lobby data
+	# --- 🌐 NEW: FORCE SYNCHRONIZER AUTHORITY OVERRIDE ---
+	# Find your MultiplayerSynchronizer child node and explicitly give it 
+	# the same network peer authority ID assigned to this Player 2 object [0.1]!
+	var sync_node = get_node_or_null("MultiplayerSynchronizer")
+	if sync_node:
+		sync_node.set_multiplayer_authority(get_multiplayer_authority())
+		print("🔌 Player2 Synchronizer authority successfully locked to peer ID: ", get_multiplayer_authority())
+	
+	# Configure Player 2 settings from the synchronized arena lobby data
 	character_class = arena.p2_selected_character
 	selected_ability = arena.p2_selected_skill
 	lives = arena.starting_lives_setting
@@ -42,6 +55,7 @@ func _ready() -> void:
 		"Recon": speed = 600.0
 		"Slingshotter": speed = 475.0
 		"Cowboy": speed = 400.0
+
 
 func _physics_process(delta: float) -> void:
 	time_since_last_normal += delta
