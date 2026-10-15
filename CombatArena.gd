@@ -216,16 +216,19 @@ func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 	else:
 		# --- ONLINE P2P MODE: Only the Host Machine handles instantiation ---
 		if multiplayer.is_server():
+			var p1_scene = preload("res://Player.tscn")
+			var p2_scene = preload("res://Player2.tscn") # 🚀 LOAD YOUR EXCLUSIVE CLIENT ASSET
+			
 			# Spawn P1 Human (Blue)
-			player1 = player_scene.instantiate()
+			player1 = p1_scene.instantiate()
 			player1.name = "Player1"
 			add_child(player1)
 			player1.global_position = Vector2(120, screen_height / 2)
 			
 			# Spawn P2 Human (Red)
-			player2 = player_scene.instantiate()
+			player2 = p2_scene.instantiate()
 			player2.name = "Player2"
-			add_child(player2)
+			add_child(player2) # MultiplayerSpawner mirrors Player2.tscn cleanly to Guest [0.1]!
 			player2.global_position = Vector2(screen_width - 120, screen_height / 2)
 			
 			# Wait a single frame for the network nodes to map across the LAN switches
