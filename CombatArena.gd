@@ -360,9 +360,10 @@ func setup_hud(screen_width: float) -> void:
 func _process(_delta: float) -> void:
 	if not game_active: return
 	
-	# Automatically attach local script pointers if nodes just arrived over the network
+	# Check if the spawner has instantiated the scenes onto the machine tree layer yet
 	if player1 == null and has_node("Player1"): player1 = get_node("Player1")
 	if player2 == null and has_node("Player2"): player2 = get_node("Player2")
+
 	
 	if is_instance_valid(player1):
 		var ammo_info = player1.get_ammo_string() if player1.has_method("get_ammo_string") else ""
