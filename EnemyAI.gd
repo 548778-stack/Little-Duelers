@@ -78,20 +78,6 @@ func _ready() -> void:
 	current_health = max_health
 	ai_target_vector = position
 
-	# Build visual block shape for the Red Enemy Bot
-	var visual = ColorRect.new()
-	visual.size = Vector2(40, 80)
-	visual.position = Vector2(-20, -40)
-	visual.color = Color(1.0, 0.3, 0.3) # Crimson red
-	add_child(visual)
-
-	# Build physical collider shape
-	var collider = CollisionShape2D.new()
-	var box_shape = RectangleShape2D.new()
-	box_shape.size = Vector2(40, 80)
-	collider.shape = box_shape
-	add_child(collider)
-
 	print("🤖 Dedicated EnemyAI Initialized: Class: ", character_class, " | Ability: ", selected_ability)
 
 func _physics_process(delta: float) -> void:

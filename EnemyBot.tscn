@@ -1,0 +1,19 @@
+[gd_scene format=3 uid="uid://b2q80c1bnewdd"]
+
+[ext_resource type="Script" uid="uid://4uccjv84f6mn" path="res://EnemyAI.gd" id="1_awvds"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_awvds"]
+size = Vector2(40, 80)
+
+[node name="EnemyBot" type="CharacterBody2D" unique_id=580583051]
+script = ExtResource("1_awvds")
+
+[node name="ColorRect" type="ColorRect" parent="." unique_id=744316633]
+offset_left = -20.0
+offset_top = -40.0
+offset_right = 20.0
+offset_bottom = 40.0
+color = Color(1, 0.3019608, 0.3019608, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=858471345]
+shape = SubResource("RectangleShape2D_awvds")
