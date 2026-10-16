@@ -119,18 +119,28 @@ func _on_offline_pressed() -> void:
 	show_lobby_dashboard() 
 	print("🎮 Opened character selection lobby dashboard for Offline Mode vs AI Bot.")
 
+# Update your launch functions inside CombatArena.gd:
+
 func _on_setup_finished() -> void:
-	# 3. Wipes the Lobby selection overlay screen completely out of memory when launch is clicked
+	if vs_ai_mode or multiplayer.multiplayer_peer == null:
+		# Offline mode: Clean menu overlay layer and boot instantly
+		if is_instance_valid(menu_layer): menu_layer.queue_free()
+		sync_lobby_and_start(selected_map, starting_lives_setting, p1_selected_character, p1_selected_skill, p2_selected_character, p2_selected_skill)
+	else:
+		# DIRECTIONS FIX: Server triggers the Multi-Client RPC scene change!
+		print("📡 Host launching match. Ordering multi-client transition across LAN sockets...")
+		rpc("broadcast_scene_change_to_all_clients", selected_map, starting_lives_setting, p1_selected_character, p1_selected_skill, p2_selected_character, p2_selected_skill)
+
+# --- DIRECTIONS FIX: THE MULTI-CLIENT SCENE TRANSITION RPC ---
+@rpc("any_peer", "call_local", "reliable")
+func broadcast_scene_change_to_all_clients(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
+	# Both Host and Guest execute this function at the exact same moment!
 	if is_instance_valid(menu_layer):
 		menu_layer.queue_free()
 		
-	if vs_ai_mode or multiplayer.multiplayer_peer == null:
-		# Offline Mode: Launch immediately using your baseline lobby configurations!
-		sync_lobby_and_start(selected_map, starting_lives_setting, p1_selected_character, p1_selected_skill, p2_selected_character, p2_selected_skill)
-	else:
-		# Online LAN Mode: Distribute rules payload across the network switches
-		print("📡 Host clicked START. Distributing rules payload across LAN network sockets...")
-		rpc("sync_lobby_and_start", selected_map, starting_lives_setting, p1_selected_character, p1_selected_skill, p2_selected_character, p2_selected_skill)
+	# Call your unified layout generator to build your HUD docks and spawn quadrants safely
+	sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s)
+	print("🔌 Scene successfully loaded with matching UI layers on terminal machine.")
 
 func _on_host_pressed() -> void:
 	var peer = ENetMultiplayerPeer.new()

@@ -98,6 +98,7 @@ func _input(event: InputEvent) -> void:
 	var target_mouse_pos = get_global_mouse_position()
 	var fire_direction = global_position.direction_to(target_mouse_pos)
 
+	# --- MOUSE LEFT CLICK: NORMAL ---
 	if event.is_action_pressed("attack_normal"):
 		if is_reloading: return
 		if character_class == "Cowboy" and current_ammo <= 0:
@@ -105,45 +106,48 @@ func _input(event: InputEvent) -> void:
 			return
 			
 		if time_since_last_normal >= normal_cooldown_time:
-			# ROUTE VIA SERVER RPC: Send spawn instructions to the master server pipeline [0.1]
-			rpc_id(1, "request_server_bullet_spawn", "normal", global_position, fire_direction, player_id, character_class)
+			# DIRECTIONS FIX: Call the @rpc function to let the server spawn the bullet!
+			rpc("request_server_bullet_spawn", "normal", global_position, fire_direction, player_id, character_class)
 			time_since_last_normal = 0.0
 
+	# --- MOUSE RIGHT CLICK: SPECIAL ---
 	elif event.is_action_pressed("attack_special"):
 		if special_charges > 0:
-			rpc_id(1, "request_server_bullet_spawn", "special", global_position, fire_direction, player_id, character_class)
+			rpc("request_server_bullet_spawn", "special", global_position, fire_direction, player_id, character_class)
 			special_charges -= 1
 
+	# --- MOUSE WHEEL SCROLL: ABILITIES ---
 	elif event.is_action_pressed("attack_ability"):
 		var active_skill = arena.p1_selected_skill if player_id == 1 else arena.p2_selected_skill
 		if local_ability_timer < arena.active_ability_cooldown_time: return
 		
-		# Map your skills out cleanly
 		if active_skill == "Recons Eye":
 			for i in range(-1, 2):
 				var spread_angle = i * 0.18
 				var rotated_dir = fire_direction.rotated(spread_angle)
-				rpc_id(1, "request_server_bullet_spawn", "tracking_normal", global_position, rotated_dir, player_id, character_class)
+				rpc("request_server_bullet_spawn", "tracking_normal", global_position, rotated_dir, player_id, character_class)
 		else:
 			var bullet_type = "bouncing_normal"
 			if active_skill == "Piercing Shot": bullet_type = "piercing_special"
 			elif active_skill == "Marksman": bullet_type = "marksman_normal"
-			rpc_id(1, "request_server_bullet_spawn", bullet_type, global_position, fire_direction, player_id, character_class)
+			rpc("request_server_bullet_spawn", bullet_type, global_position, fire_direction, player_id, character_class)
 			
 		local_ability_timer = 0.0
 
-# --- THE MASTER SERVER PROJECTILE HOOK ---
+# --- DIRECTIONS FIX: THE MASTER P2P BULLET GENERATOR RPC ---
 @rpc("any_peer", "call_local", "reliable")
 func request_server_bullet_spawn(type: String, start_pos: Vector2, fire_dir: Vector2, owner_id: int, owner_class: String) -> void:
-	# Only the Server computes and instantiates physics nodes globally [0.1]!
+	# Force the Host/Server to handle instantiation so the MultiplayerSpawner syncs it down!
 	if multiplayer.is_server() or multiplayer.multiplayer_peer == null:
 		var arena = get_parent()
-		var bullet = Area2D.new()
-		bullet.set_script(preload("res://Projectile.gd"))
+		
+		# Load your brand new saved Projectile Scene instead of an empty Area2D!
+		var projectile_scene = preload("res://Projectile.tscn")
+		var bullet = projectile_scene.instantiate()
+		
 		bullet.attacker_id = owner_id
 		bullet.damage_type = type
 		
-		# Set damage values securely on the server side
 		var base_damage = 1.4 if owner_class == "Cowboy" and type == "normal" else 1.0
 		if type == "special": base_damage = 2.0
 		elif type == "marksman_normal": base_damage = 2.8
@@ -151,11 +155,12 @@ func request_server_bullet_spawn(type: String, start_pos: Vector2, fire_dir: Vec
 		bullet.set_meta("damage_amount", base_damage)
 		bullet.set_meta("is_critical", (type == "marksman_normal"))
 		
-		arena.add_child(bullet) # Spawner replicates this down to the guest instantly!
+		arena.add_child(bullet)
 		bullet.global_position = start_pos + (fire_dir * 45.0)
 		
 		if bullet.has_method("set_vector_trajectory"):
 			bullet.set_vector_trajectory(fire_dir)
+
 
 # --- SHARED HUD INTERFACE HELPERS ---
 func get_ammo_string() -> String:
