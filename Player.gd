@@ -30,8 +30,8 @@ func _ready() -> void:
 		print("🖥️ Player1 Synchronizer authority successfully locked to Host.")
 	
 	# Configure Player 1 from the synchronized arena lobby data
-	character_class = arena.p1_selected_character
-	selected_ability = arena.p1_selected_skill
+	character_class = arena.p1_selected_character if name == "Player1" else arena.p2_selected_character
+	selected_ability = arena.p1_selected_skill if name == "Player1" else arena.p2_selected_skill
 	lives = arena.starting_lives_setting
 	current_health = max_health
 	
@@ -64,34 +64,83 @@ func _physics_process(delta: float) -> void:
 	position.x = clampf(position.x, 40.0, mid_x - 30.0)
 
 func _input(event: InputEvent) -> void:
+	# Network Guard: Only track inputs if this terminal physically controls Player 1
 	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():
 		return
 		
-	if event.is_action_pressed("attack_normal") and time_since_last_normal >= normal_cooldown_time:
-		var target_mouse_pos = get_global_mouse_position()
-		var fire_direction = global_position.direction_to(target_mouse_pos)
-		
-		# Spawns globally if online
-		if multiplayer.multiplayer_peer != null:
-			rpc("network_spawn_projectile", "normal", global_position, fire_direction)
-		else:
-			local_spawn_projectile("normal", global_position, fire_direction)
-		time_since_last_normal = 0.0
+	# Mouse Left Click: Normal Attack
+	if event.is_action_pressed("attack_normal"):
+		if has_method("is_reloading") and get("is_reloading"): return
+		if character_class == "Cowboy" and get("current_ammo") <= 0:
+			if has_method("start_reload"): call("start_reload")
+			return
+			
+		if time_since_last_normal >= normal_cooldown_time:
+			fire_projectile("normal")
+			time_since_last_normal = 0.0
+			if character_class == "Cowboy" and "current_ammo" in self:
+				set("current_ammo", get("current_ammo") - 1)
+				if get("current_ammo") <= 0: 
+					if has_method("start_reload"): call("start_reload")
+				
+	# Mouse Right Click: Special Attack (FIXED)
+	elif event.is_action_pressed("attack_special"):
+		if "special_charges" in self and get("special_charges") > 0:
+			fire_projectile("special")
+			set("special_charges", get("special_charges") - 1)
+			print("🔵 P1 fired Special Attack!")
+			
+	# Mouse Wheel Click / Scroll: Active Class Ability (FIXED)
+	elif event.is_action_pressed("attack_ability"):
+		if has_method("try_use_ability"):
+			call("try_use_ability")
+			print("🔵 P1 cast Class Ability!")
 
 @rpc("any_peer", "call_local", "reliable")
 func network_spawn_projectile(type: String, start_pos: Vector2, fire_dir: Vector2) -> void:
 	local_spawn_projectile(type, start_pos, fire_dir)
 
-func local_spawn_projectile(type: String, start_pos: Vector2, fire_dir: Vector2) -> void:
+# Paste this function at the very bottom of your Player.gd file:
+
+func fire_projectile(type: String, vertical_spread_offset: float = 0.0) -> void:
+	# Compute crosshair travel target vector based on where the local mouse click clicked!
+	var target_mouse_pos = get_global_mouse_position()
+	var fire_direction = global_position.direction_to(target_mouse_pos)
+	
+	# If online, we broadcast the shot execution so it spawns on both screens simultaneously
+	if multiplayer.multiplayer_peer != null:
+		rpc("network_spawn_projectile", type, global_position, fire_direction, vertical_spread_offset)
+	else:
+		local_spawn_projectile(type, global_position, fire_direction, vertical_spread_offset)
+
+func local_spawn_projectile(type: String, start_pos: Vector2, fire_dir: Vector2, spread_offset: float = 0.0) -> void:
 	var arena = get_parent()
 	var bullet = Area2D.new()
 	bullet.set_script(preload("res://Projectile.gd"))
-	bullet.attacker_id = 1
+	bullet.attacker_id = 1 # Player 1 owns this laser
 	bullet.damage_type = type
+	
+	# Pass custom damage attributes straight down into the bullet
+	var base_damage = 1.0
+	var crit_chance = 0.15
+	if character_class == "Cowboy":
+		base_damage = 1.4
+		crit_chance = 0.25
+	if type == "special": base_damage = 2.0
+	elif type == "marksman_normal": crit_chance = 1.0 
+		
+	var rolled_crit = randf() < crit_chance
+	if rolled_crit: base_damage *= 2.0
+		
+	bullet.set_meta("damage_amount", base_damage)
+	bullet.set_meta("is_critical", rolled_crit)
+	
 	arena.add_child(bullet)
-	bullet.global_position = start_pos + (fire_dir * 45.0)
+	bullet.global_position = start_pos + (fire_dir * 45.0) + Vector2(0, spread_offset)
+	
 	if bullet.has_method("set_vector_trajectory"):
 		bullet.set_vector_trajectory(fire_dir)
+
 
 func take_damage(amount: float, _is_special_hit: bool, is_crit_hit: bool = false) -> void:
 	if lives <= 0: return

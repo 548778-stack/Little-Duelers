@@ -193,6 +193,7 @@ func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 		var min_obs = 3 if selected_map == "Standard Field" else 6
 		var max_obs = 5 if selected_map == "Standard Field" else 9
 		if selected_map != "Open Empty Plain":
+			# Host computes the rocks and calls the RPC engine to draw them on the guest!
 			generate_and_sync_obstacles(screen_width, screen_height, min_obs, max_obs)
 
 	# 4. Hand off the physical character spawning strictly to the Master Host Machine
