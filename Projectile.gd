@@ -62,8 +62,19 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	var arena = get_parent()
-	var enemy = arena.player2 if attacker_id == 1 else arena.player1
+	var enemy = null
 	
+	if attacker_id == 1:
+		# If Player 1 fired, search for the human Player 2 first. If it's missing, lock onto the Enemy AI Bot!
+		if is_instance_valid(arena.get("player2")):
+			enemy = arena.player2
+		elif arena.has_node("Player2"):
+			enemy = arena.get_node("Player2") as CharacterBody2D
+	else:
+		# If an enemy/bot fired, look backward to target the master Player 1 human block
+		enemy = arena.player1
+
+	# (The rest of your tracking normal check continues identically below here...)
 	var is_tracking_bullet = (damage_type == "tracking_normal")
 	
 	if damage_type == "marksman_normal" and is_instance_valid(enemy):

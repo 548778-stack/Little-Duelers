@@ -8,13 +8,16 @@
 
 extends CharacterBody2D
 
+# --- YOUR ORIGINAL VARIABLES (PRESERVED PERFECTLY) ---
 @export var speed: float = 500.0
-var player_id: int = 2
+var player_id: int = 1
 
 # Health & Match settings variables
 var max_health: float = 3.0
 var current_health: float = 3.0
 var lives: int = 3
+var local_ability_timer: float = 5.0 # Tracks your own skill clock locally!
+
 
 var character_class: String = "Slingshotter"
 var selected_ability: String = "None"
@@ -22,122 +25,216 @@ var selected_ability: String = "None"
 var normal_cooldown_time: float = 0.4    
 var time_since_last_normal: float = 0.0  
 
-# Inside Player2.gd -> Update your _ready() loop:
+var is_reloading: bool = false
+var current_ammo: int = 6
+var max_ammo: int = 6
+var special_charges: int = 3
 
 func _ready() -> void:
-	# 🛡️ Wait 2 frames to ensure the server has fully assigned peer tokens across the LAN wire
-	await get_tree().process_frame
-	await get_tree().process_frame
-	
+	# Automatically determine if we are P1 or P2 by our scene tree node name
+	if name == "Player1":
+		player_id = 1
+	elif name == "Player2":
+		player_id = 2
+		
 	var arena = get_parent()
 	if not is_instance_valid(arena): return
 	
-	# --- 🌐 NEW: FORCE SYNCHRONIZER AUTHORITY OVERRIDE ---
-	# Find your MultiplayerSynchronizer child node and explicitly give it 
-	# the same network peer authority ID assigned to this Player 2 object [0.1]!
-	var sync_node = get_node_or_null("MultiplayerSynchronizer")
-	if sync_node:
-		sync_node.set_multiplayer_authority(get_multiplayer_authority())
-		print("🔌 Player2 Synchronizer authority successfully locked to peer ID: ", get_multiplayer_authority())
-	
-	# Configure Player 2 settings from the synchronized arena lobby data
-	character_class = arena.p2_selected_character if name == "Player2" else arena.p1_selected_character
-	selected_ability = arena.p2_selected_skill if name == "Player2" else arena.p1_selected_skill
-	lives = arena.starting_lives_setting
-	current_health = max_health
-	
-	# Color it Red for Player 2
+	# Color code the box visuals dynamically based on our ID
 	if has_node("ColorRect"):
-		$ColorRect.color = Color(1.0, 0.3, 0.3)
-		
-	# Apply balances
-	match character_class:
-		"Recon": speed = 600.0
-		"Slingshotter": speed = 475.0
-		"Cowboy": speed = 400.0
-
+		if player_id == 1:
+			$ColorRect.color = Color(0.2, 0.6, 1.0) # Radiant Blue
+		else:
+			$ColorRect.color = Color(1.0, 0.3, 0.3) # Crimson Red
 
 func _physics_process(delta: float) -> void:
 	time_since_last_normal += delta
+	local_ability_timer += delta
 	
-	# 🛡️ THE LAN HARDWARE GUARD: Only read keys if we are the Guest!
+	# 🛡️ LOCAL INPUT GUARD: Server drives P1, Client drives P2
 	if multiplayer.multiplayer_peer != null:
-		if is_multiplayer_authority():
-			var direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
-			velocity = direction * speed
-			move_and_slide()
-			
-			# Clamp positions inside the designated RIGHT half quadrants
-			var view_size = get_viewport_rect().size
-			var mid_x = view_size.x / 2.0
-			position.y = clampf(position.y, 40.0, view_size.y - 40.0)
-			position.x = clampf(position.x, mid_x + 30.0, view_size.x - 40.0)
-			
-			# 🚀 FORCE UPLOAD: Upload our exact position directly to the Host PC!
-			rpc_id(1, "upload_position_to_server", global_position)
+		if multiplayer.is_server() and player_id != 1: return
+		if not multiplayer.is_server() and player_id != 2: return
+		
+	# Process pure 2D WASD movements natively
+	var direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	velocity = direction * speed
+	move_and_slide()
+	
+	# Enforce 4-Quadrant territory boundary tracks
+	var view_size = get_viewport_rect().size
+	var mid_x = view_size.x / 2.0
+	position.y = clampf(position.y, 40.0, view_size.y - 40.0)
+	
+	if player_id == 1:
+		position.x = clampf(position.x, 40.0, mid_x - 30.0)
 	else:
-		# Offline path fallback
-		var direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
-		velocity = direction * speed
-		move_and_slide()
-
-@rpc("any_peer", "call_remote", "unreliable")
-func upload_position_to_server(guest_pos: Vector2) -> void:
-	# The Host PC receives this and forces Player 2 to move to match your screen!
-	global_position = guest_pos
+		position.x = clampf(position.x, mid_x + 30.0, view_size.x - 40.0)
 
 func _input(event: InputEvent) -> void:
-	# Network Guard: Only track inputs if this terminal physically controls Player 2
-	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():
-		return
-		
-	# Mouse Left Click: Normal Attack
+	# Prevent machines from reading each other's mouse clicks
+	if multiplayer.multiplayer_peer != null:
+		if multiplayer.is_server() and player_id != 1: return
+		if not multiplayer.is_server() and player_id != 2: return
+
+	var arena = get_parent()
+	if not is_instance_valid(arena): return
+
+	# --- MOUSE LEFT CLICK: PRIMARY LAUNCHER ---
 	if event.is_action_pressed("attack_normal"):
+		if is_reloading: return
+		if character_class == "Cowboy" and current_ammo <= 0:
+			if arena.has_method("start_reload"): arena.start_reload()
+			return
+			
 		if time_since_last_normal >= normal_cooldown_time:
+			# RESTORED: Direct script instantiation path! [0.1]
+			var bullet = Area2D.new()
+			bullet.set_script(preload("res://Projectile.gd"))
+			bullet.attacker_id = player_id
+			bullet.damage_type = "normal"
+			
+			var base_damage = 1.4 if character_class == "Cowboy" else 1.0
+			var crit_chance = 0.25 if character_class == "Cowboy" else 0.15
+			var rolled_crit = randf() < crit_chance
+			if rolled_crit: base_damage *= 2.0
+			
+			bullet.set_meta("damage_amount", base_damage)
+			bullet.set_meta("is_critical", rolled_crit)
+			
+			arena.add_child(bullet)
+			
 			var target_mouse_pos = get_global_mouse_position()
 			var fire_direction = global_position.direction_to(target_mouse_pos)
-			rpc_id(1, "request_server_projectile_spawn", "normal", global_position, fire_direction)
+			bullet.global_position = global_position + (fire_direction * 45.0)
+			
+			if bullet.has_method("set_vector_trajectory"):
+				bullet.set_vector_trajectory(fire_direction)
+				
 			time_since_last_normal = 0.0
-			
-	# Mouse Right Click: Special Attack (FIXED FOR LAN)
+			if character_class == "Cowboy":
+				current_ammo -= 1
+
+	# --- MOUSE RIGHT CLICK: SPECIAL FIRE AMMUNITION ---
 	elif event.is_action_pressed("attack_special"):
-		var target_mouse_pos = get_global_mouse_position()
-		var fire_direction = global_position.direction_to(target_mouse_pos)
-		# Tell the Host Server to register and spawn Player 2's Special Bullet
-		rpc_id(1, "request_server_projectile_spawn", "special", global_position, fire_direction)
-		print("🔴 P2 requested Special Attack spawn on Host.")
+		if special_charges > 0:
+			var bullet = Area2D.new()
+			bullet.set_script(preload("res://Projectile.gd"))
+			bullet.attacker_id = player_id
+			bullet.damage_type = "special"
+			bullet.set_meta("damage_amount", 2.0)
+			bullet.set_meta("is_critical", false)
 			
-	# Mouse Wheel Click / Scroll: Active Class Ability (FIXED FOR LAN)
+			arena.add_child(bullet)
+			
+			var target_mouse_pos = get_global_mouse_position()
+			var fire_direction = global_position.direction_to(target_mouse_pos)
+			bullet.global_position = global_position + (fire_direction * 45.0)
+			
+			if bullet.has_method("set_vector_trajectory"):
+				bullet.set_vector_trajectory(fire_direction)
+				
+			special_charges -= 1
+
+	# --- MOUSE WHEEL CLICK/SCROLL: CLASS SPECIAL ABILITIES ---
 	elif event.is_action_pressed("attack_ability"):
+		var active_skill = arena.p1_selected_skill if player_id == 1 else arena.p2_selected_skill
+		
+		if local_ability_timer < arena.active_ability_cooldown_time:
+			print("⏳ Skill is recharging! Your local clock is at: ", local_ability_timer)
+			return
+			
 		var target_mouse_pos = get_global_mouse_position()
 		var fire_direction = global_position.direction_to(target_mouse_pos)
-		# Send a map request based on whichever ability string choice you picked in the lobby!
-		var ability_bullet_type = "bouncing_normal" # Default fallback
-		if selected_ability == "Piercing Shot": ability_bullet_type = "piercing_special"
-		elif selected_ability == "Marksman": ability_bullet_type = "marksman_normal"
-		elif selected_ability == "Recons Eye": ability_bullet_type = "tracking_normal"
 		
-		rpc_id(1, "request_server_projectile_spawn", ability_bullet_type, global_position, fire_direction)
-		print("🔴 P2 requested Class Ability spawn on Host: ", selected_ability)
+		if active_skill == "Recons Eye":
+			print("👁️ Spawning RECON'S EYE 3-Shot Fan Array!")
+			for i in range(-1, 2):
+				var bullet = Area2D.new()
+				bullet.set_script(preload("res://Projectile.gd"))
+				bullet.attacker_id = player_id
+				bullet.damage_type = "tracking_normal"
+				bullet.set_meta("damage_amount", 1.0)
+				bullet.set_meta("is_critical", false)
+				
+				arena.add_child(bullet)
+				
+				var spread_angle = i * 0.18
+				var rotated_direction = fire_direction.rotated(spread_angle)
+				bullet.global_position = global_position + (rotated_direction * 45.0)
+				
+				if bullet.has_method("set_vector_trajectory"):
+					bullet.set_vector_trajectory(rotated_direction)
+		else:
+			var bullet_type = ""
+			var base_damage = 1.0
+			var is_crit = false
+			
+			if active_skill == "Piercing Shot":
+				bullet_type = "piercing_special"
+				base_damage = 2.0
+			elif active_skill == "Bouncing Shot":
+				bullet_type = "bouncing_normal"
+				base_damage = 1.0
+			elif active_skill == "Marksman":
+				bullet_type = "marksman_normal"
+				base_damage = 2.8
+				is_crit = true
+			else:
+				bullet_type = "bouncing_normal"
+			
+			var bullet = Area2D.new()
+			bullet.set_script(preload("res://Projectile.gd"))
+			bullet.attacker_id = player_id
+			bullet.damage_type = bullet_type
+			
+			bullet.set_meta("damage_amount", base_damage)
+			bullet.set_meta("is_critical", is_crit)
+			
+			arena.add_child(bullet)
+			bullet.global_position = global_position + (fire_direction * 45.0)
+			
+			if bullet.has_method("set_vector_trajectory"):
+				bullet.set_vector_trajectory(fire_direction)
+				
+			print("🎯 Cast Ability successfully: ", active_skill, " -> ", bullet_type)
+				
+		local_ability_timer = 0.0
+		print("🎯 Cast Ability successfully! Local clock reset to 0.0.")
+
+
 
 
 @rpc("any_peer", "call_local", "reliable")
-func request_server_projectile_spawn(type: String, start_pos: Vector2, fire_dir: Vector2) -> void:
-	# Only execute this logic on the Master Host machine [0.1]
-	if multiplayer.is_server():
-		var arena = get_parent()
-		var bullet = Area2D.new()
-		bullet.set_script(preload("res://Projectile.gd"))
-		bullet.attacker_id = 2 # Strictly owned by Player 2
-		bullet.damage_type = type
-		
-		arena.add_child(bullet)
-		bullet.global_position = start_pos + (fire_dir * 45.0)
-		
-		if bullet.has_method("set_vector_trajectory"):
-			bullet.set_vector_trajectory(fire_dir)
+func network_spawn_projectile(type: String, start_pos: Vector2, fire_dir: Vector2) -> void:
+	local_spawn_projectile(type, start_pos, fire_dir)
 
-
+func local_spawn_projectile(type: String, start_pos: Vector2, fire_dir: Vector2) -> void:
+	var arena = get_parent()
+	var bullet = Area2D.new()
+	bullet.set_script(preload("res://Projectile.gd"))
+	bullet.attacker_id = 2 # Player 2 owns this laser
+	bullet.damage_type = type
+	
+	var base_damage = 1.0
+	var crit_chance = 0.15
+	if character_class == "Cowboy":
+		base_damage = 1.4
+		crit_chance = 0.25
+	if type == "special": base_damage = 2.0
+	elif type == "marksman_normal": crit_chance = 1.0 
+		
+	var rolled_crit = randf() < crit_chance
+	if rolled_crit: base_damage *= 2.0
+		
+	bullet.set_meta("damage_amount", base_damage)
+	bullet.set_meta("is_critical", rolled_crit)
+	
+	arena.add_child(bullet)
+	bullet.global_position = start_pos + (fire_dir * 45.0)
+	
+	if bullet.has_method("set_vector_trajectory"):
+		bullet.set_vector_trajectory(fire_dir)
 
 func take_damage(amount: float, _is_special_hit: bool, is_crit_hit: bool = false) -> void:
 	if lives <= 0: return

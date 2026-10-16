@@ -1,5 +1,6 @@
 extends CharacterBody2D
 
+# --- YOUR ORIGINAL VARIABLES (PRESERVED PERFECTLY) ---
 @export var speed: float = 500.0
 var player_id: int = 1
 
@@ -7,6 +8,7 @@ var player_id: int = 1
 var max_health: float = 3.0
 var current_health: float = 3.0
 var lives: int = 3
+var local_ability_timer: float = 5.0 # Tracks your own skill clock locally!
 
 var character_class: String = "Slingshotter"
 var selected_ability: String = "None"
@@ -14,113 +16,197 @@ var selected_ability: String = "None"
 var normal_cooldown_time: float = 0.4    
 var time_since_last_normal: float = 0.0  
 
-# Inside Player.gd -> Update your _ready() loop:
+var is_reloading: bool = false
+var current_ammo: int = 6
+var max_ammo: int = 6
+var special_charges: int = 3
 
 func _ready() -> void:
-	await get_tree().process_frame
-	await get_tree().process_frame
-	
+	# Automatically determine if we are P1 or P2 by our scene tree node name
+	if name == "Player1":
+		player_id = 1
+	elif name == "Player2":
+		player_id = 2
+		
 	var arena = get_parent()
 	if not is_instance_valid(arena): return
 	
-	# --- 🌐 FORCE SYNCHRONIZER AUTHORITY OVERRIDE ---
-	var sync_node = get_node_or_null("MultiplayerSynchronizer")
-	if sync_node:
-		sync_node.set_multiplayer_authority(get_multiplayer_authority())
-		print("🖥️ Player1 Synchronizer authority successfully locked to Host.")
-	
-	# Configure Player 1 from the synchronized arena lobby data
-	character_class = arena.p1_selected_character if name == "Player1" else arena.p2_selected_character
-	selected_ability = arena.p1_selected_skill if name == "Player1" else arena.p2_selected_skill
-	lives = arena.starting_lives_setting
-	current_health = max_health
-	
-	# Color it Blue for Player 1
+	# Color code the box visuals dynamically based on our ID
 	if has_node("ColorRect"):
-		$ColorRect.color = Color(0.2, 0.6, 1.0)
-		
-	# Apply balances
-	match character_class:
-		"Recon": speed = 600.0
-		"Slingshotter": speed = 475.0
-		"Cowboy": speed = 400.0
+		if player_id == 1:
+			$ColorRect.color = Color(0.2, 0.6, 1.0) # Radiant Blue
+		else:
+			$ColorRect.color = Color(1.0, 0.3, 0.3) # Crimson Red
 
 func _physics_process(delta: float) -> void:
 	time_since_last_normal += delta
+	local_ability_timer += delta
 	
-	# 🛡️ THE LAN HARDWARE GUARD: Only allow inputs if this terminal is the Host!
-	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():
-		return
+	# 🛡️ LOCAL INPUT GUARD: Server drives P1, Client drives P2
+	if multiplayer.multiplayer_peer != null:
+		if multiplayer.is_server() and player_id != 1: return
+		if not multiplayer.is_server() and player_id != 2: return
 		
-	# Read the Host keyboard movements natively
+	# Process pure 2D WASD movements natively
 	var direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	velocity = direction * speed
 	move_and_slide()
 	
-	# Clamp positions inside the designated LEFT half quadrants boundary tracks
+	# Enforce 4-Quadrant territory boundary tracks
 	var view_size = get_viewport_rect().size
 	var mid_x = view_size.x / 2.0
 	position.y = clampf(position.y, 40.0, view_size.y - 40.0)
-	position.x = clampf(position.x, 40.0, mid_x - 30.0)
+	
+	if player_id == 1:
+		position.x = clampf(position.x, 40.0, mid_x - 30.0)
+	else:
+		position.x = clampf(position.x, mid_x + 30.0, view_size.x - 40.0)
 
 func _input(event: InputEvent) -> void:
-	# Network Guard: Only track inputs if this terminal physically controls Player 1
-	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():
-		return
-		
-	# Mouse Left Click: Normal Attack
+	# Prevent machines from reading each other's mouse clicks
+	if multiplayer.multiplayer_peer != null:
+		if multiplayer.is_server() and player_id != 1: return
+		if not multiplayer.is_server() and player_id != 2: return
+
+	var arena = get_parent()
+	if not is_instance_valid(arena): return
+
+	# --- MOUSE LEFT CLICK: PRIMARY LAUNCHER ---
 	if event.is_action_pressed("attack_normal"):
-		if has_method("is_reloading") and get("is_reloading"): return
-		if character_class == "Cowboy" and get("current_ammo") <= 0:
-			if has_method("start_reload"): call("start_reload")
+		if is_reloading: return
+		if character_class == "Cowboy" and current_ammo <= 0:
+			if arena.has_method("start_reload"): arena.start_reload()
 			return
 			
 		if time_since_last_normal >= normal_cooldown_time:
-			fire_projectile("normal")
-			time_since_last_normal = 0.0
-			if character_class == "Cowboy" and "current_ammo" in self:
-				set("current_ammo", get("current_ammo") - 1)
-				if get("current_ammo") <= 0: 
-					if has_method("start_reload"): call("start_reload")
-				
-	# Mouse Right Click: Special Attack (FIXED)
-	elif event.is_action_pressed("attack_special"):
-		if "special_charges" in self and get("special_charges") > 0:
-			fire_projectile("special")
-			set("special_charges", get("special_charges") - 1)
-			print("🔵 P1 fired Special Attack!")
+			# RESTORED: Direct script instantiation path! [0.1]
+			var bullet = Area2D.new()
+			bullet.set_script(preload("res://Projectile.gd"))
+			bullet.attacker_id = player_id
+			bullet.damage_type = "normal"
 			
-	# Mouse Wheel Click / Scroll: Active Class Ability (FIXED)
+			var base_damage = 1.4 if character_class == "Cowboy" else 1.0
+			var crit_chance = 0.25 if character_class == "Cowboy" else 0.15
+			var rolled_crit = randf() < crit_chance
+			if rolled_crit: base_damage *= 2.0
+			
+			bullet.set_meta("damage_amount", base_damage)
+			bullet.set_meta("is_critical", rolled_crit)
+			
+			arena.add_child(bullet)
+			
+			var target_mouse_pos = get_global_mouse_position()
+			var fire_direction = global_position.direction_to(target_mouse_pos)
+			bullet.global_position = global_position + (fire_direction * 45.0)
+			
+			if bullet.has_method("set_vector_trajectory"):
+				bullet.set_vector_trajectory(fire_direction)
+				
+			time_since_last_normal = 0.0
+			if character_class == "Cowboy":
+				current_ammo -= 1
+
+	# --- MOUSE RIGHT CLICK: SPECIAL FIRE AMMUNITION ---
+	elif event.is_action_pressed("attack_special"):
+		if special_charges > 0:
+			var bullet = Area2D.new()
+			bullet.set_script(preload("res://Projectile.gd"))
+			bullet.attacker_id = player_id
+			bullet.damage_type = "special"
+			bullet.set_meta("damage_amount", 2.0)
+			bullet.set_meta("is_critical", false)
+			
+			arena.add_child(bullet)
+			
+			var target_mouse_pos = get_global_mouse_position()
+			var fire_direction = global_position.direction_to(target_mouse_pos)
+			bullet.global_position = global_position + (fire_direction * 45.0)
+			
+			if bullet.has_method("set_vector_trajectory"):
+				bullet.set_vector_trajectory(fire_direction)
+				
+			special_charges -= 1
+
 	elif event.is_action_pressed("attack_ability"):
-		if has_method("try_use_ability"):
-			call("try_use_ability")
-			print("🔵 P1 cast Class Ability!")
+		var active_skill = arena.p1_selected_skill if player_id == 1 else arena.p2_selected_skill
+		
+		if local_ability_timer < arena.active_ability_cooldown_time:
+			print("⏳ Skill is recharging! Your local clock is at: ", local_ability_timer)
+			return
+			
+		var target_mouse_pos = get_global_mouse_position()
+		var fire_direction = global_position.direction_to(target_mouse_pos)
+		
+		if active_skill == "Recons Eye":
+			print("👁️ Spawning RECON'S EYE 3-Shot Fan Array!")
+			for i in range(-1, 2):
+				var bullet = Area2D.new()
+				bullet.set_script(preload("res://Projectile.gd"))
+				bullet.attacker_id = player_id
+				bullet.damage_type = "tracking_normal"
+				bullet.set_meta("damage_amount", 1.0)
+				bullet.set_meta("is_critical", false)
+				
+				arena.add_child(bullet)
+				
+				var spread_angle = i * 0.18
+				var rotated_direction = fire_direction.rotated(spread_angle)
+				bullet.global_position = global_position + (rotated_direction * 45.0)
+				
+				if bullet.has_method("set_vector_trajectory"):
+					bullet.set_vector_trajectory(rotated_direction)
+		else:
+			var bullet_type = ""
+			var base_damage = 1.0
+			var is_crit = false
+			
+			if active_skill == "Piercing Shot":
+				bullet_type = "piercing_special"
+				base_damage = 2.0
+			elif active_skill == "Bouncing Shot":
+				bullet_type = "bouncing_normal"
+				base_damage = 1.0
+			elif active_skill == "Marksman":
+				bullet_type = "marksman_normal"
+				base_damage = 2.8
+				is_crit = true
+			else:
+				bullet_type = "bouncing_normal"
+			
+			var bullet = Area2D.new()
+			bullet.set_script(preload("res://Projectile.gd"))
+			bullet.attacker_id = player_id
+			bullet.damage_type = bullet_type
+			
+			bullet.set_meta("damage_amount", base_damage)
+			bullet.set_meta("is_critical", is_crit)
+			
+			arena.add_child(bullet)
+			bullet.global_position = global_position + (fire_direction * 45.0)
+			
+			if bullet.has_method("set_vector_trajectory"):
+				bullet.set_vector_trajectory(fire_direction)
+				
+			print("🎯 Cast Ability successfully: ", active_skill, " -> ", bullet_type)
+				
+		local_ability_timer = 0.0
+		print("🎯 Cast Ability successfully! Local clock reset to 0.0.")
 
+
+
+# --- RESTORED: P2P PROJECTILE SYNCHRONIZATION HOOK ---
 @rpc("any_peer", "call_local", "reliable")
-func network_spawn_projectile(type: String, start_pos: Vector2, fire_dir: Vector2) -> void:
-	local_spawn_projectile(type, start_pos, fire_dir)
-
-# Paste this function at the very bottom of your Player.gd file:
-
-func fire_projectile(type: String, vertical_spread_offset: float = 0.0) -> void:
-	# Compute crosshair travel target vector based on where the local mouse click clicked!
-	var target_mouse_pos = get_global_mouse_position()
-	var fire_direction = global_position.direction_to(target_mouse_pos)
-	
-	# If online, we broadcast the shot execution so it spawns on both screens simultaneously
-	if multiplayer.multiplayer_peer != null:
-		rpc("network_spawn_projectile", type, global_position, fire_direction, vertical_spread_offset)
-	else:
-		local_spawn_projectile(type, global_position, fire_direction, vertical_spread_offset)
+func network_spawn_projectile(type: String, start_pos: Vector2, fire_dir: Vector2, spread_offset: float) -> void:
+	local_spawn_projectile(type, start_pos, fire_dir, spread_offset)
 
 func local_spawn_projectile(type: String, start_pos: Vector2, fire_dir: Vector2, spread_offset: float = 0.0) -> void:
 	var arena = get_parent()
 	var bullet = Area2D.new()
 	bullet.set_script(preload("res://Projectile.gd"))
-	bullet.attacker_id = 1 # Player 1 owns this laser
+	bullet.attacker_id = player_id
 	bullet.damage_type = type
 	
-	# Pass custom damage attributes straight down into the bullet
+	# Process custom damage attributes straight down into the bullet
 	var base_damage = 1.0
 	var crit_chance = 0.15
 	if character_class == "Cowboy":
@@ -135,12 +221,14 @@ func local_spawn_projectile(type: String, start_pos: Vector2, fire_dir: Vector2,
 	bullet.set_meta("damage_amount", base_damage)
 	bullet.set_meta("is_critical", rolled_crit)
 	
+	# Add child to the scene tree FIRST so coordinates compute accurately
 	arena.add_child(bullet)
 	bullet.global_position = start_pos + (fire_dir * 45.0) + Vector2(0, spread_offset)
 	
 	if bullet.has_method("set_vector_trajectory"):
 		bullet.set_vector_trajectory(fire_dir)
-
+	else:
+		bullet.direction = 1.0 if fire_dir.x > 0 else -1.0
 
 func take_damage(amount: float, _is_special_hit: bool, is_crit_hit: bool = false) -> void:
 	if lives <= 0: return

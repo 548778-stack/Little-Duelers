@@ -3,6 +3,29 @@ extends Node2D
 var player1: CharacterBody2D
 var player2: CharacterBody2D
 
+# --- ORIGINAL LOBBY AND RULE GLOBAL STATES ---
+var vs_ai_mode: bool = false
+var selected_map: String = "Standard Field"
+var starting_lives_setting: int = 3
+var game_active: bool = false
+
+
+# --- RESTORED: AMMO, COOLDOWNS, AND RELOAD TRACKERS ---
+var current_ammo: int = 6
+var max_ammo: int = 6
+var is_reloading: bool = false
+var reload_timer: float = 0.0
+var reload_duration: float = 1.2
+
+var special_charges: int = 3
+var special_charge_timer: float = 0.0
+var max_special_charges: int = 3
+
+var active_ability_cooldown_time: float = 5.0
+var time_since_last_ability: float = 0.0
+
+var jerry_miculek_charges: int = 2
+
 # HUD and Menu UI pointers
 var p1_hud_label: Label
 var p2_hud_label: Label
@@ -10,16 +33,12 @@ var p1_bars: Array[TextureProgressBar] = []
 var p2_bars: Array[TextureProgressBar] = []
 
 var menu_layer: CanvasLayer
-var game_active: bool = false
 
 # Match settings state tracking data
-var vs_ai_mode: bool = false
 var p1_selected_character: String = "Slingshotter"
 var p1_selected_skill: String = "Piercing Shot"
 var p2_selected_character: String = "Slingshotter"
 var p2_selected_skill: String = "Piercing Shot"
-var selected_map: String = "Standard Field"
-var starting_lives_setting: int = 3
 var p1_abilities_box: VBoxContainer
 var p2_abilities_box: VBoxContainer
 
@@ -365,24 +384,50 @@ func _process(_delta: float) -> void:
 	if player1 == null and has_node("Player1"): player1 = get_node("Player1")
 	if player2 == null and has_node("Player2"): player2 = get_node("Player2")
 
-	
+	# --- 🖥️ RESTORED: PLAYER 1 HUD DOCK GRAPHICS TRACKER ---
 	if is_instance_valid(player1):
+		# 1. Fetch current Cowboy weapon ammo clips or abilities string layouts cleanly
 		var ammo_info = player1.get_ammo_string() if player1.has_method("get_ammo_string") else ""
 		var skill_info = player1.get_ability_status_string() if player1.has_method("get_ability_status_string") else ""
+		
+		# 2. Print the exact floating decimal health values beautifully onto the HUD Label
 		p1_hud_label.text = "  💙 P1 Lives: " + str(player1.lives) + " | HP: " + str(snappedf(player1.current_health, 0.1)) + "/" + str(player1.max_health) + ammo_info + skill_info
-		if player1.has_method("get_ability_cooldown_percentage"):
-			p1_ability_bar.value = player1.get_ability_cooldown_percentage() * 100.0
+		
+		# 3. Paint the localized ability progress line bar smoothly using its personal timer
+		p1_ability_bar.value = (player1.get("local_ability_timer") / active_ability_cooldown_time) * 100.0
+		
+		# 4. Render special attack inventory progress charge bars natively
 		if player1.has_method("get_individual_bar_progress"):
-			for i in range(3): p1_bars[i].value = player1.get_individual_bar_progress(i) * 100.0
-			
+			for i in range(3): 
+				p1_bars[i].value = player1.get_individual_bar_progress(i) * 100.0
+		else:
+			for i in range(3):
+				p1_bars[i].value = 100.0 if player1.get("special_charges") > i else 0.0
+
+	# --- 🔴 RESTORED: PLAYER 2 / ENEMY BOT HUD DOCK GRAPHICS TRACKER ---
 	if is_instance_valid(player2):
 		var ammo_info = player2.get_ammo_string() if player2.has_method("get_ammo_string") else ""
 		var skill_info = player2.get_ability_status_string() if player2.has_method("get_ability_status_string") else ""
-		p2_hud_label.text = skill_info + ammo_info + " | P2 Lives: " + str(player2.lives) + " | HP: " + str(player2.current_health) + "/" + str(player2.max_health) + " ❤️  "
-		if player2.has_method("get_ability_cooldown_percentage"):
-			p2_ability_bar.value = player2.get_ability_cooldown_percentage() * 100.0
+		
+		p2_hud_label.text = skill_info + ammo_info + " | P2 Lives: " + str(player2.lives) + " | HP: " + str(snappedf(player2.current_health, 0.1)) + "/" + str(player2.max_health) + " ❤️  "
+		
+		# FIXED: 1. Extract the variable first
+		var p2_timer = player2.get("local_ability_timer")
+		
+		# FIXED: 2. Check if it is a valid number before dividing so it never crashes!
+		if p2_timer != null and typeof(p2_timer) in [TYPE_INT, TYPE_FLOAT]:
+			p2_ability_bar.value = (p2_timer / active_ability_cooldown_time) * 100.0
+		else:
+			p2_ability_bar.value = 0.0
+		
+		# Restored special charge tracking loops
 		if player2.has_method("get_individual_bar_progress"):
-			for i in range(3): p2_bars[i].value = player2.get_individual_bar_progress(i) * 100.0
+			for i in range(3): 
+				p2_bars[i].value = player2.get_individual_bar_progress(i) * 100.0
+		else:
+			for i in range(3):
+				p2_bars[i].value = 100.0 if player2.get("special_charges") > i else 0.0
+
 
 func _draw() -> void:
 	var screen_width = get_viewport_rect().size.x
