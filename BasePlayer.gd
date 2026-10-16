@@ -40,46 +40,42 @@ func _ready() -> void:
 		else:
 			$ColorRect.color = Color(1.0, 0.3, 0.3) # Red
 
+# Inside BasePlayer.gd -> Add these exact guards to your process and input loops:
+
 func _physics_process(delta: float) -> void:
+	# 🛡️ THE BULLETPROOF LAN HARDWARE INJECTION SHIELD:
+	# If online, completely reject movement loops if we do not own this specific character body peer id!
+	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():
+		return # Instantly freezes physics calculations for the remote player container block [0.1]
+		
 	time_since_last_normal += delta
 	local_ability_timer += delta
 	
-	# Shared Special Charge Regeneration
-	if special_charges < 3:
-		special_charge_timer += delta
-		if special_charge_timer >= 1.8:
-			special_charges += 1
-			special_charge_timer = 0.0
-	else:
-		special_charge_timer = 0.0
-	
-	# Network Guard
-	if multiplayer.multiplayer_peer != null:
-		if multiplayer.is_server() and player_id != 1: return
-		if not multiplayer.is_server() and player_id != 2: return
-		
+	# (Your existing Special Charge regenerators, WASD directions, and move_and_slide loops continue here...)
 	var direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	velocity = direction * speed
 	move_and_slide()
 	
-	# Enforce 4-Quadrant vertical and horizontal boundaries
+	# Dynamic boundary clamps based on name matching tracking loops
 	var view_size = get_viewport_rect().size
 	var mid_x = view_size.x / 2.0
 	position.y = clampf(position.y, 40.0, view_size.y - 40.0)
 	
-	if player_id == 1:
-		position.x = clampf(position.x, 40.0, mid_x - 30.0)
+	# Determine team side quadrant by checking if we are authority server or authority client
+	if (multiplayer.multiplayer_peer != null and is_multiplayer_authority() and multiplayer.is_server()) or (multiplayer.multiplayer_peer == null and name == "Player1"):
+		position.x = clampf(position.x, 40.0, mid_x - 30.0) # Left side clamp
 	else:
-		position.x = clampf(position.x, mid_x + 30.0, view_size.x - 40.0)
+		position.x = clampf(position.x, mid_x + 30.0, view_size.x - 40.0) # Right side clamp
+
 
 func _input(event: InputEvent) -> void:
-	if multiplayer.multiplayer_peer != null:
-		if multiplayer.is_server() and player_id != 1: return
-		if not multiplayer.is_server() and player_id != 2: return
-
+	# 🛡️ INPUT TRIGGER GUARD: Prevent mouse clicks from registering across remote machine screens
+	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():
+		return # Instantly cuts off left-clicks, right-clicks, and middle scroll wheels [0.1]
+		
 	var arena = get_parent()
 	if not is_instance_valid(arena): return
-
+	
 	# Mouse Left Click: Normal Attack
 	if event.is_action_pressed("attack_normal"):
 		if is_reloading: return

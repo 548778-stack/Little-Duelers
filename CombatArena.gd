@@ -215,12 +215,14 @@ func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 			# Host computes the rocks and calls the RPC engine to draw them on the guest!
 			generate_and_sync_obstacles(screen_width, screen_height, min_obs, max_obs)
 
-	# 4. Hand off the physical character spawning strictly to the Master Host Machine
+# Inside CombatArena.gd -> Replace your character spawning section inside sync_lobby_and_start():
+
+	# 4. P2P UNIQUE ID NODE SPINNER LAUNCHER
 	var player_scene = preload("res://Player.tscn")
 	var bot_scene = preload("res://EnemyBot.tscn")
 	
 	if vs_ai_mode or multiplayer.multiplayer_peer == null:
-		# --- OFFLINE MODE: Spawn the Human Player 1 and the Dedicated AI Bot ---
+		# --- OFFLINE MODE: Fallback to baseline default setups ---
 		player1 = player_scene.instantiate()
 		player1.name = "Player1"
 		add_child(player1)
@@ -231,36 +233,29 @@ func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 		add_child(player2)
 		player2.global_position = Vector2(screen_width - 120, screen_height / 2)
 		
-		print("🎮 Offline Match Successfully Initialized: Player1 vs EnemyBot.")
+		print("🎮 Offline Match Successfully Initialized.")
 		
 	else:
-		# --- ONLINE P2P MODE: Only the Host Machine handles instantiation ---
+		# --- ONLINE P2P MODE: Only the Server/Host runs this generation block ---
 		if multiplayer.is_server():
-			var p1_scene = preload("res://Player.tscn")
-			var p2_scene = preload("res://Player2.tscn") # 🚀 LOAD YOUR EXCLUSIVE CLIENT ASSET
+			var host_id = 1
+			var guest_id = multiplayer.get_peers()[0] if multiplayer.get_peers().size() > 0 else 1
 			
-			# Spawn P1 Human (Blue)
-			player1 = p1_scene.instantiate()
-			player1.name = "Player1"
+			# --- SPAWN HOST BLOCK ---
+			player1 = player_scene.instantiate()
+			player1.name = str(host_id) # 🚀 FIX: Named exactly after Host Peer ID!
+			player1.set_multiplayer_authority(host_id) # 🚀 FIX: Assigned BEFORE add_child!
 			add_child(player1)
 			player1.global_position = Vector2(120, screen_height / 2)
 			
-			# Spawn P2 Human (Red)
-			player2 = p2_scene.instantiate()
-			player2.name = "Player2"
-			add_child(player2) # MultiplayerSpawner mirrors Player2.tscn cleanly to Guest [0.1]!
+			# --- SPAWN GUEST BLOCK ---
+			player2 = player_scene.instantiate()
+			player2.name = str(guest_id) # 🚀 FIX: Named exactly after Guest Peer ID!
+			player2.set_multiplayer_authority(guest_id) # 🚀 FIX: Assigned BEFORE add_child!
+			add_child(player2)
 			player2.global_position = Vector2(screen_width - 120, screen_height / 2)
 			
-			# Wait a single frame for the network nodes to map across the LAN switches
-			await get_tree().process_frame
-			
-			# Assign clean hardware control authority tokens
-			player1.set_multiplayer_authority(1) # Host rules P1
-			
-			var client_id = multiplayer.get_peers()[0] if multiplayer.get_peers().size() > 0 else 1
-			player2.set_multiplayer_authority(client_id) # Guest rules P2 completely!
-			
-			print("📡 P2P Network Handshake Complete: Controls distributed across LAN.")
+			print("📡 P2P Nodes Instantiated! Authorities explicitly locked before birth: P1=", host_id, " | P2=", guest_id)
 			
 		# Host server computes map layouts and pushes them down the wire
 		var min_obs = 3 if selected_map == "Standard Field" else 6
