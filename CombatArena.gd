@@ -236,22 +236,20 @@ func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 		print("🎮 Offline Match Successfully Initialized.")
 		
 	else:
-		# --- ONLINE P2P MODE: Only the Server/Host runs this generation block ---
+		# --- ONLINE P2P MODE ---
 		if multiplayer.is_server():
 			var host_id = 1
 			var guest_id = multiplayer.get_peers()[0] if multiplayer.get_peers().size() > 0 else 1
 			
-			# --- SPAWN HOST BLOCK ---
+			# Spawn P1 Host Node (Named after Peer ID string!)
 			player1 = player_scene.instantiate()
-			player1.name = str(host_id) # 🚀 FIX: Named exactly after Host Peer ID!
-			player1.set_multiplayer_authority(host_id) # 🚀 FIX: Assigned BEFORE add_child!
+			player1.name = str(host_id) 
 			add_child(player1)
 			player1.global_position = Vector2(120, screen_height / 2)
 			
-			# --- SPAWN GUEST BLOCK ---
+			# Spawn P2 Guest Node (Named after Peer ID string!)
 			player2 = player_scene.instantiate()
-			player2.name = str(guest_id) # 🚀 FIX: Named exactly after Guest Peer ID!
-			player2.set_multiplayer_authority(guest_id) # 🚀 FIX: Assigned BEFORE add_child!
+			player2.name = str(guest_id)
 			add_child(player2)
 			player2.global_position = Vector2(screen_width - 120, screen_height / 2)
 			

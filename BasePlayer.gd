@@ -3,6 +3,8 @@ class_name BasePlayer # 🚀 This allows other scripts to inherit from it!
 
 # --- YOUR PRESERVED VARIABLES ---
 @export var speed: float = 500.0
+const SPEED = 300.0
+@onready var color_rect = $ColorRect
 var player_id: int = 1
 
 var max_health: float = 3.0
@@ -24,59 +26,78 @@ var special_charges: int = 3
 var local_ability_timer: float = 5.0
 var special_charge_timer: float = 0.0
 
+func _enter_tree() -> void:
+	# If we are online, automatically convert our Peer ID name string back into an integer
+	# and lock the machine's hardware authority right at birth!
+	if multiplayer.multiplayer_peer != null and name.is_valid_int():
+		set_multiplayer_authority(name.to_int())
+		print("⚡ Node ", name, " early authority locked to peer ID: ", name.to_int())
+
 func _ready() -> void:
-	# Shared setup logic for both players
-	if name == "Player1":
-		player_id = 1
-	elif name == "Player2":
-		player_id = 2
-		
 	var arena = get_parent()
 	if not is_instance_valid(arena): return
 	
-	if has_node("ColorRect"):
-		if player_id == 1:
-			$ColorRect.color = Color(0.2, 0.6, 1.0) # Blue
+	# FIXED: Determine player_id and colors cleanly by checking server status!
+	if multiplayer.multiplayer_peer != null:
+		if is_multiplayer_authority():
+			player_id = 1 if multiplayer.is_server() else 2
 		else:
-			$ColorRect.color = Color(1.0, 0.3, 0.3) # Red
+			player_id = 2 if multiplayer.is_server() else 1
+	else:
+		# Offline mode fallback
+		player_id = 1 if name == "Player1" else 2
 
-# Inside BasePlayer.gd -> Add these exact guards to your process and input loops:
+	# Tint colors perfectly without hardcoded name matching
+	if has_node("ColorRect"):
+		if multiplayer.multiplayer_peer != null:
+			# If the node's owner is the Server, paint it Blue. If it's the Client guest, paint it Red!
+			if is_multiplayer_authority() == multiplayer.is_server():
+				$ColorRect.color = Color(0.2, 0.6, 1.0) # Host Blue
+			else:
+				$ColorRect.color = Color(1.0, 0.3, 0.3) # Guest Red
+		else:
+			$ColorRect.color = Color(0.2, 0.6, 1.0) if player_id == 1 else Color(1.0, 0.3, 0.3)
 
 func _physics_process(delta: float) -> void:
-	# 🛡️ THE BULLETPROOF LAN HARDWARE INJECTION SHIELD:
-	# If online, completely reject movement loops if we do not own this specific character body peer id!
 	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():
-		return # Instantly freezes physics calculations for the remote player container block [0.1]
+		return
 		
 	time_since_last_normal += delta
 	local_ability_timer += delta
 	
-	# (Your existing Special Charge regenerators, WASD directions, and move_and_slide loops continue here...)
+	# Special Charge Recharging
+	if special_charges < 3:
+		special_charge_timer += delta
+		if special_charge_timer >= 1.8:
+			special_charges += 1
+			special_charge_timer = 0.0
+			
 	var direction = Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	velocity = direction * speed
 	move_and_slide()
 	
-	# Dynamic boundary clamps based on name matching tracking loops
+	# FIXED: Clamp screen quadrants based on server/client status rather than text names!
 	var view_size = get_viewport_rect().size
 	var mid_x = view_size.x / 2.0
 	position.y = clampf(position.y, 40.0, view_size.y - 40.0)
 	
-	# Determine team side quadrant by checking if we are authority server or authority client
-	if (multiplayer.multiplayer_peer != null and is_multiplayer_authority() and multiplayer.is_server()) or (multiplayer.multiplayer_peer == null and name == "Player1"):
-		position.x = clampf(position.x, 40.0, mid_x - 30.0) # Left side clamp
-	else:
-		position.x = clampf(position.x, mid_x + 30.0, view_size.x - 40.0) # Right side clamp
-
+	if multiplayer.multiplayer_peer != null:
+		# If this instance is owned by the server machine, lock it left. Otherwise, lock it right!
+		if is_multiplayer_authority() == multiplayer.is_server():
+			position.x = clampf(position.x, 40.0, mid_x - 30.0)
+		else:
+			position.x = clampf(position.x, mid_x + 30.0, view_size.x - 40.0)
 
 func _input(event: InputEvent) -> void:
-	# 🛡️ INPUT TRIGGER GUARD: Prevent mouse clicks from registering across remote machine screens
 	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():
-		return # Instantly cuts off left-clicks, right-clicks, and middle scroll wheels [0.1]
+		return
 		
 	var arena = get_parent()
 	if not is_instance_valid(arena): return
 	
-	# Mouse Left Click: Normal Attack
+	var target_mouse_pos = get_global_mouse_position()
+	var fire_direction = global_position.direction_to(target_mouse_pos)
+
 	if event.is_action_pressed("attack_normal"):
 		if is_reloading: return
 		if character_class == "Cowboy" and current_ammo <= 0:
@@ -84,104 +105,57 @@ func _input(event: InputEvent) -> void:
 			return
 			
 		if time_since_last_normal >= normal_cooldown_time:
-			var bullet = Area2D.new()
-			bullet.set_script(preload("res://Projectile.gd"))
-			bullet.attacker_id = player_id
-			bullet.damage_type = "normal"
-			
-			var base_damage = 1.4 if character_class == "Cowboy" else 1.0
-			var crit_chance = 0.25 if character_class == "Cowboy" else 0.15
-			var rolled_crit = randf() < crit_chance
-			if rolled_crit: base_damage *= 2.0
-			
-			bullet.set_meta("damage_amount", base_damage)
-			bullet.set_meta("is_critical", rolled_crit)
-			
-			arena.add_child(bullet)
-			
-			var target_mouse_pos = get_global_mouse_position()
-			var fire_direction = global_position.direction_to(target_mouse_pos)
-			bullet.global_position = global_position + (fire_direction * 45.0)
-			
-			if bullet.has_method("set_vector_trajectory"):
-				bullet.set_vector_trajectory(fire_direction)
-				
+			# ROUTE VIA SERVER RPC: Send spawn instructions to the master server pipeline [0.1]
+			rpc_id(1, "request_server_bullet_spawn", "normal", global_position, fire_direction, player_id, character_class)
 			time_since_last_normal = 0.0
-			if character_class == "Cowboy":
-				current_ammo -= 1
 
-	# Mouse Right Click: Special Attack
 	elif event.is_action_pressed("attack_special"):
 		if special_charges > 0:
-			var bullet = Area2D.new()
-			bullet.set_script(preload("res://Projectile.gd"))
-			bullet.attacker_id = player_id
-			bullet.damage_type = "special"
-			bullet.set_meta("damage_amount", 2.0)
-			bullet.set_meta("is_critical", false)
-			
-			arena.add_child(bullet)
-			
-			var target_mouse_pos = get_global_mouse_position()
-			var fire_direction = global_position.direction_to(target_mouse_pos)
-			bullet.global_position = global_position + (fire_direction * 45.0)
-			
-			if bullet.has_method("set_vector_trajectory"):
-				bullet.set_vector_trajectory(fire_direction)
-				
+			rpc_id(1, "request_server_bullet_spawn", "special", global_position, fire_direction, player_id, character_class)
 			special_charges -= 1
 
-	# Mouse Wheel: Class Abilities
 	elif event.is_action_pressed("attack_ability"):
 		var active_skill = arena.p1_selected_skill if player_id == 1 else arena.p2_selected_skill
+		if local_ability_timer < arena.active_ability_cooldown_time: return
 		
-		if local_ability_timer < arena.active_ability_cooldown_time:
-			return
-			
-		var target_mouse_pos = get_global_mouse_position()
-		var fire_direction = global_position.direction_to(target_mouse_pos)
-		
+		# Map your skills out cleanly
 		if active_skill == "Recons Eye":
 			for i in range(-1, 2):
-				var bullet = Area2D.new()
-				bullet.set_script(preload("res://Projectile.gd"))
-				bullet.attacker_id = player_id
-				bullet.damage_type = "tracking_normal"
-				bullet.set_meta("damage_amount", 1.0)
-				bullet.set_meta("is_critical", false)
-				
-				arena.add_child(bullet)
-				
 				var spread_angle = i * 0.18
-				var rotated_direction = fire_direction.rotated(spread_angle)
-				bullet.global_position = global_position + (rotated_direction * 45.0)
-				
-				if bullet.has_method("set_vector_trajectory"):
-					bullet.set_vector_trajectory(rotated_direction)
+				var rotated_dir = fire_direction.rotated(spread_angle)
+				rpc_id(1, "request_server_bullet_spawn", "tracking_normal", global_position, rotated_dir, player_id, character_class)
 		else:
 			var bullet_type = "bouncing_normal"
 			if active_skill == "Piercing Shot": bullet_type = "piercing_special"
 			elif active_skill == "Marksman": bullet_type = "marksman_normal"
+			rpc_id(1, "request_server_bullet_spawn", bullet_type, global_position, fire_direction, player_id, character_class)
 			
-			var bullet = Area2D.new()
-			bullet.set_script(preload("res://Projectile.gd"))
-			bullet.attacker_id = player_id
-			bullet.damage_type = bullet_type
-			
-			var base_damage = 1.0
-			var is_crit = (bullet_type == "marksman_normal")
-			if is_crit: base_damage = 2.8
-			
-			bullet.set_meta("damage_amount", base_damage)
-			bullet.set_meta("is_critical", is_crit)
-			
-			arena.add_child(bullet)
-			bullet.global_position = global_position + (fire_direction * 45.0)
-			
-			if bullet.has_method("set_vector_trajectory"):
-				bullet.set_vector_trajectory(fire_direction)
-				
 		local_ability_timer = 0.0
+
+# --- THE MASTER SERVER PROJECTILE HOOK ---
+@rpc("any_peer", "call_local", "reliable")
+func request_server_bullet_spawn(type: String, start_pos: Vector2, fire_dir: Vector2, owner_id: int, owner_class: String) -> void:
+	# Only the Server computes and instantiates physics nodes globally [0.1]!
+	if multiplayer.is_server() or multiplayer.multiplayer_peer == null:
+		var arena = get_parent()
+		var bullet = Area2D.new()
+		bullet.set_script(preload("res://Projectile.gd"))
+		bullet.attacker_id = owner_id
+		bullet.damage_type = type
+		
+		# Set damage values securely on the server side
+		var base_damage = 1.4 if owner_class == "Cowboy" and type == "normal" else 1.0
+		if type == "special": base_damage = 2.0
+		elif type == "marksman_normal": base_damage = 2.8
+		
+		bullet.set_meta("damage_amount", base_damage)
+		bullet.set_meta("is_critical", (type == "marksman_normal"))
+		
+		arena.add_child(bullet) # Spawner replicates this down to the guest instantly!
+		bullet.global_position = start_pos + (fire_dir * 45.0)
+		
+		if bullet.has_method("set_vector_trajectory"):
+			bullet.set_vector_trajectory(fire_dir)
 
 # --- SHARED HUD INTERFACE HELPERS ---
 func get_ammo_string() -> String:
