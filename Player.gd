@@ -14,10 +14,20 @@ var selected_ability: String = "None"
 var normal_cooldown_time: float = 0.4    
 var time_since_last_normal: float = 0.0  
 
+# Inside Player.gd -> Update your _ready() loop:
+
 func _ready() -> void:
 	await get_tree().process_frame
+	await get_tree().process_frame
+	
 	var arena = get_parent()
 	if not is_instance_valid(arena): return
+	
+	# --- 🌐 FORCE SYNCHRONIZER AUTHORITY OVERRIDE ---
+	var sync_node = get_node_or_null("MultiplayerSynchronizer")
+	if sync_node:
+		sync_node.set_multiplayer_authority(get_multiplayer_authority())
+		print("🖥️ Player1 Synchronizer authority successfully locked to Host.")
 	
 	# Configure Player 1 from the synchronized arena lobby data
 	character_class = arena.p1_selected_character
