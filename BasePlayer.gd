@@ -27,36 +27,37 @@ var local_ability_timer: float = 5.0
 var special_charge_timer: float = 0.0
 
 func _enter_tree() -> void:
-	# If we are online, automatically convert our Peer ID name string back into an integer
-	# and lock the machine's hardware authority right at birth!
+	# FIXED HOOK: Since the Host now names the node BEFORE add_child(), 
+	# this clean valid integer string check will execute perfectly the exact millisecond it enters the tree!
 	if multiplayer.multiplayer_peer != null and name.is_valid_int():
 		set_multiplayer_authority(name.to_int())
-		print("⚡ Node ", name, " early authority locked to peer ID: ", name.to_int())
-
+		print("⚡ BasePlayer Hook: Authority locked cleanly at tree entry for ID: ", name.to_int())
+		
 func _ready() -> void:
+	# 🚀 DIRECTIONS FIX: Force the script to wait one frame for the network to finish syncing names and authority!
+	await get_tree().process_frame
+	
 	var arena = get_parent()
 	if not is_instance_valid(arena): return
 	
-	# FIXED: Determine player_id and colors cleanly by checking server status!
+	# Determine player_id values securely after the network sync frame finish
 	if multiplayer.multiplayer_peer != null:
 		if is_multiplayer_authority():
 			player_id = 1 if multiplayer.is_server() else 2
 		else:
 			player_id = 2 if multiplayer.is_server() else 1
 	else:
-		# Offline mode fallback
 		player_id = 1 if name == "Player1" else 2
 
-	# Tint colors perfectly without hardcoded name matching
+	# --- CHARACTER COLOR CODE BLOCK ---
+	# Both computers can now execute these exact if player_id == 1 checks with zero desyncs!
 	if has_node("ColorRect"):
-		if multiplayer.multiplayer_peer != null:
-			# If the node's owner is the Server, paint it Blue. If it's the Client guest, paint it Red!
-			if is_multiplayer_authority() == multiplayer.is_server():
-				$ColorRect.color = Color(0.2, 0.6, 1.0) # Host Blue
-			else:
-				$ColorRect.color = Color(1.0, 0.3, 0.3) # Guest Red
+		if player_id == 1:
+			$ColorRect.color = Color(0.2, 0.6, 1.0) # Player 1 is always Blue
+			print("💙 Tinted Player 1 box Blue cleanly.")
 		else:
-			$ColorRect.color = Color(0.2, 0.6, 1.0) if player_id == 1 else Color(1.0, 0.3, 0.3)
+			$ColorRect.color = Color(1.0, 0.3, 0.3) # Player 2 / Bot is always Red
+			print("🔴 Tinted Player 2 box Red cleanly.")
 
 func _physics_process(delta: float) -> void:
 	if multiplayer.multiplayer_peer != null and not is_multiplayer_authority():

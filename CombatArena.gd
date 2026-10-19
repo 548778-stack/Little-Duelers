@@ -259,32 +259,26 @@ func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 	else:
 		# --- ONLINE P2P MODE ---
 		if multiplayer.is_server():
-			
 			var host_id = 1
 			var guest_id = multiplayer.get_peers() if multiplayer.get_peers().size() > 0 else 1
 			
-			# --- SPAWN PLAYER 1 (HOST) ---
+			# --- 🚀 SPAWN PLAYER 1 (HOST) ---
 			player1 = player_scene.instantiate()
-			player1.name = str(host_id)
-			
-			# Read from dictionary before calling add_child!
-			player1.character_class = lobby_selections[1]
-			player1.selected_ability = lobby_skills[1]
-			
-			add_child(player1)
+			player1.name = str(host_id) # 1. Set Name FIRST
+			player1.character_class = lobby_selections
+			player1.selected_ability = lobby_skills
+			add_child(player1) # 2. Add to scene tree SECOND
 			player1.global_position = Vector2(120, screen_height / 2)
 			
-			# --- SPAWN PLAYER 2 (GUEST) ---
+			# --- 🚀 SPAWN PLAYER 2 (GUEST) ---
 			player2 = player_scene.instantiate()
-			player2.name = str(guest_id)
-			
-			# Read from dictionary before calling add_child!
+			player2.name = str(guest_id) # 1. Set Name FIRST
 			player2.character_class = lobby_selections["guest"]
 			player2.selected_ability = lobby_skills["guest"]
-			
-			add_child(player2)
+			add_child(player2) # 2. Add to scene tree SECOND
 			player2.global_position = Vector2(screen_width - 120, screen_height / 2)
-
+			
+			print("📡 Host enforced clean spawning timeline order successfully!")
 
 func generate_and_sync_obstacles(screen_width: float, screen_height: float, min_c: int, max_c: int) -> void:
 	var center_x = screen_width / 2
