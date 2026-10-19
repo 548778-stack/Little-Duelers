@@ -262,21 +262,30 @@ func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 			var host_id = 1
 			var guest_id = multiplayer.get_peers() if multiplayer.get_peers().size() > 0 else 1
 			
+# Inside CombatArena.gd -> Replace your player property assignments inside sync_lobby_and_start():
+
 			# --- 🚀 SPAWN PLAYER 1 (HOST) ---
 			player1 = player_scene.instantiate()
-			player1.name = str(host_id) # 1. Set Name FIRST
-			player1.character_class = lobby_selections
-			player1.selected_ability = lobby_skills
-			add_child(player1) # 2. Add to scene tree SECOND
+			player1.name = str(host_id) 
+			
+			# FIXED CORRECTION LOGIC: Use a key lookup with a fallback safeguard!
+			player1.character_class = lobby_selections.get(host_id, "Slingshotter")
+			player1.selected_ability = lobby_skills.get(host_id, "Piercing Shot")
+			
+			add_child(player1) 
 			player1.global_position = Vector2(120, screen_height / 2)
 			
 			# --- 🚀 SPAWN PLAYER 2 (GUEST) ---
 			player2 = player_scene.instantiate()
-			player2.name = str(guest_id) # 1. Set Name FIRST
-			player2.character_class = lobby_selections["guest"]
-			player2.selected_ability = lobby_skills["guest"]
-			add_child(player2) # 2. Add to scene tree SECOND
+			player2.name = str(guest_id) 
+			
+			# FIXED CORRECTION LOGIC: Read cleanly from the guest dict keys!
+			player2.character_class = lobby_selections.get("guest", "Slingshotter")
+			player2.selected_ability = lobby_skills.get("guest", "Piercing Shot")
+			
+			add_child(player2) 
 			player2.global_position = Vector2(screen_width - 120, screen_height / 2)
+
 			
 			print("📡 Host enforced clean spawning timeline order successfully!")
 
