@@ -155,7 +155,7 @@ func request_server_bullet_spawn(type: String, start_pos: Vector2, fire_dir: Vec
 		bullet.set_meta("damage_amount", base_damage)
 		bullet.set_meta("is_critical", (type == "marksman_normal"))
 		
-		arena.add_child(bullet)
+		arena.add_child(bullet, true)
 		bullet.global_position = start_pos + (fire_dir * 45.0)
 		
 		if bullet.has_method("set_vector_trajectory"):

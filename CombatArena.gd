@@ -42,6 +42,17 @@ var p2_selected_skill: String = "Piercing Shot"
 var p1_abilities_box: VBoxContainer
 var p2_abilities_box: VBoxContainer
 
+# Insert this variable near the top of CombatArena.gd with your other properties:
+var lobby_selections: Dictionary = {
+	1: "Slingshotter", # Default fallback for Host (ID 1)
+	"guest": "Slingshotter" # Default fallback for incoming Guest
+}
+var lobby_skills: Dictionary = {
+	1: "Piercing Shot",
+	"guest": "Piercing Shot"
+}
+
+
 # HUD progress bar pointers
 var p1_ability_bar: TextureProgressBar
 var p2_ability_bar: TextureProgressBar
@@ -248,28 +259,32 @@ func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 	else:
 		# --- ONLINE P2P MODE ---
 		if multiplayer.is_server():
-			var host_id = 1
-			var guest_id = multiplayer.get_peers()[0] if multiplayer.get_peers().size() > 0 else 1
 			
-			# Spawn P1 Host Node (Named after Peer ID string!)
+			var host_id = 1
+			var guest_id = multiplayer.get_peers() if multiplayer.get_peers().size() > 0 else 1
+			
+			# --- SPAWN PLAYER 1 (HOST) ---
 			player1 = player_scene.instantiate()
-			player1.name = str(host_id) 
+			player1.name = str(host_id)
+			
+			# Read from dictionary before calling add_child!
+			player1.character_class = lobby_selections[1]
+			player1.selected_ability = lobby_skills[1]
+			
 			add_child(player1)
 			player1.global_position = Vector2(120, screen_height / 2)
 			
-			# Spawn P2 Guest Node (Named after Peer ID string!)
+			# --- SPAWN PLAYER 2 (GUEST) ---
 			player2 = player_scene.instantiate()
 			player2.name = str(guest_id)
+			
+			# Read from dictionary before calling add_child!
+			player2.character_class = lobby_selections["guest"]
+			player2.selected_ability = lobby_skills["guest"]
+			
 			add_child(player2)
 			player2.global_position = Vector2(screen_width - 120, screen_height / 2)
-			
-			print("📡 P2P Nodes Instantiated! Authorities explicitly locked before birth: P1=", host_id, " | P2=", guest_id)
-			
-		# Host server computes map layouts and pushes them down the wire
-		var min_obs = 3 if selected_map == "Standard Field" else 6
-		var max_obs = 5 if selected_map == "Standard Field" else 9
-		if selected_map != "Open Empty Plain":
-			generate_and_sync_obstacles(screen_width, screen_height, min_obs, max_obs)
+
 
 func generate_and_sync_obstacles(screen_width: float, screen_height: float, min_c: int, max_c: int) -> void:
 	var center_x = screen_width / 2
@@ -472,31 +487,34 @@ func show_lobby_dashboard() -> void:
 	var lobby_instance = LOBBY_SCENE.instantiate()
 	menu_layer.add_child(lobby_instance)
 	
-	# --- 🎮 CONNECT PLAYER 1 SELECTIONS ---
+	# --- Update Player 1 Button selections inside show_lobby_dashboard() ---
 	_connect_lobby_button(lobby_instance, "P1Recon", func(): 
-		p1_selected_character = "Recon"
+		rpc("register_player_selection", 1, "Recon", "Recons Eye")
 		update_lobby_abilities(1, "Recon")
 	)
 	_connect_lobby_button(lobby_instance, "P1Slingshotter", func(): 
-		p1_selected_character = "Slingshotter"
+		rpc("register_player_selection", 1, "Slingshotter", "Piercing Shot")
 		update_lobby_abilities(1, "Slingshotter")
 	)
 	_connect_lobby_button(lobby_instance, "P1Cowboy", func(): 
-		p1_selected_character = "Cowboy"
+		rpc("register_player_selection", 1, "Cowboy", "Marksman")
 		update_lobby_abilities(1, "Cowboy")
 	)
 	
-	# --- 🎮 CONNECT PLAYER 2 SELECTIONS ---
+	# --- Update Player 2 Button selections inside show_lobby_dashboard() ---
 	_connect_lobby_button(lobby_instance, "P2Recon", func(): 
-		p2_selected_character = "Recon"
+		var my_id = multiplayer.get_unique_id()
+		rpc("register_player_selection", my_id, "Recon", "Recons Eye")
 		update_lobby_abilities(2, "Recon")
 	)
 	_connect_lobby_button(lobby_instance, "P2Slingshotter", func(): 
-		p2_selected_character = "Slingshotter"
+		var my_id = multiplayer.get_unique_id()
+		rpc("register_player_selection", my_id, "Slingshotter", "Piercing Shot")
 		update_lobby_abilities(2, "Slingshotter")
 	)
 	_connect_lobby_button(lobby_instance, "P2Cowboy", func(): 
-		p2_selected_character = "Cowboy"
+		var my_id = multiplayer.get_unique_id()
+		rpc("register_player_selection", my_id, "Cowboy", "Marksman")
 		update_lobby_abilities(2, "Cowboy")
 	)
 	
@@ -625,6 +643,22 @@ func spawn_crit_hit_marker(hit_position: Vector2) -> void:
 	# 5. AUTOMATIC MEMORY CLEANUP
 	# Delete the node from the running game world the exact moment the animation finishes
 	tween.chain().tween_callback(marker.queue_free)
+
+@rpc("any_peer", "call_local", "reliable")
+func register_player_selection(sender_id: int, chosen_class: String, chosen_skill: String) -> void:
+	# Both Host and Guest track choices. If the sender is Host (1), update ID 1. Otherwise, update the Guest slot!
+	if sender_id == 1:
+		lobby_selections[1] = chosen_class
+		lobby_skills[1] = chosen_skill
+		p1_selected_character = chosen_class
+		p1_selected_skill = chosen_skill
+	else:
+		lobby_selections["guest"] = chosen_class
+		lobby_skills["guest"] = chosen_skill
+		p2_selected_character = chosen_class
+		p2_selected_skill = chosen_skill
+		
+	print("📡 Selection registered over LAN! Peer ID: ", sender_id, " chose: ", chosen_class, " | Skill: ", chosen_skill)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed:

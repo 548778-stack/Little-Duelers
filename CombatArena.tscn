@@ -16,5 +16,5 @@ grow_vertical = 2
 color = Color(0.078431375, 0.09019608, 0.12156863, 1)
 
 [node name="MultiplayerSpawner" type="MultiplayerSpawner" parent="." unique_id=179887406]
-_spawnable_scenes = PackedStringArray("uid://b1k5ajbttqe0q", "res://Player2.tscn", "uid://b8cjmr6bh1rvu")
+_spawnable_scenes = PackedStringArray("uid://b1k5ajbttqe0q", "uid://b8cjmr6bh1rvu")
 spawn_path = NodePath("..")
