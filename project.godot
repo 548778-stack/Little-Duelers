@@ -15,6 +15,10 @@ run/main_scene="uid://b5av4kpn5effo"
 config/features=PackedStringArray("4.6", "Mobile")
 config/icon="res://icon.svg"
 
+[autoload]
+
+GlobalLobby="*uid://da2vtofx5h0jy"
+
 [input]
 
 move_up={

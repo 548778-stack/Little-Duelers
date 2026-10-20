@@ -182,3 +182,5 @@ theme_override_font_sizes/font_size = 22
 theme_override_styles/normal = SubResource("StyleBoxFlat_vho1f")
 text = "START
 "
+
+[connection signal="pressed" from="VBoxContainer/StartMatchButton" to="." method="_on_start_match_pressed"]

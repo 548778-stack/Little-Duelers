@@ -97,26 +97,30 @@ func _ready() -> void:
 				spawn_player(id, Vector2(screen_width - 120, screen_height / 2))
 			)
 
-
 func spawn_player(peer_id: int, spawn_position: Vector2) -> void:
-	# Required Logic Sequence: instantiate() ➔ player.name = str(peer_id) ➔ add_child(player)
+	# Required Logic Sequence: instantiate() ➔ player.name = str(peer_id) ➔ add_child(player) [0.1]
 	var p_instance = PLAYER_SCENE.instantiate()
 	p_instance.name = str(peer_id)
 	
-	# Fetch character selections dynamically out of your lobby database map
+	# READ FINAL LOBBY CONFIGURATIONS: Safely extract class strings from your persistent vault [0.1]!
 	if peer_id == 1:
-		p_instance.character_class = lobby_selections.get(1, "Slingshotter")
-		p_instance.selected_ability = lobby_skills.get(1, "Piercing Shot")
+		p_instance.character_class = GlobalLobby.lobby_selections.get(1, "Slingshotter")
+		p_instance.selected_ability = GlobalLobby.lobby_skills.get(1, "Piercing Shot")
+		p_instance.lives = GlobalLobby.starting_lives_setting
 		player1 = p_instance
 	else:
-		p_instance.character_class = lobby_selections.get(peer_id, lobby_selections.get("guest", "Slingshotter"))
-		p_instance.selected_ability = lobby_skills.get(peer_id, lobby_skills.get("guest", "Piercing Shot"))
+		p_instance.character_class = GlobalLobby.lobby_selections.get(peer_id, GlobalLobby.lobby_selections.get("guest", "Slingshotter"))
+		p_instance.selected_ability = GlobalLobby.lobby_skills.get(peer_id, GlobalLobby.lobby_skills.get("guest", "Piercing Shot"))
+		p_instance.lives = GlobalLobby.starting_lives_setting
 		player2 = p_instance
+		
+	# Update match lives setting limits globally inside the arena loop container properties
+	starting_lives_setting = GlobalLobby.starting_lives_setting
+	selected_map = GlobalLobby.selected_map
 		
 	add_child(p_instance, true) # Force clean human-readable network node naming
 	p_instance.global_position = spawn_position
-	print("🚀 Spawned Player Node: ", p_instance.name, " via connection event listener.")
-
+	print("🚀 Combat Setup: Spawned ", p_instance.character_class, " (Node ID: ", p_instance.name, ") with ", p_instance.lives, " Lives.")
 
 func _process(delta: float) -> void:
 	if not game_active: return
