@@ -39,20 +39,13 @@ var lobby_skills: Dictionary = {
 const PLAYER_SCENE = preload("res://Player.tscn")
 const BOT_SCENE = preload("res://EnemyBot.tscn")
 
-# Update the _ready() loop inside CombatArena.gd to look exactly like this:
+# Update the top functions inside your CombatArena.gd script file:
+
 func _ready() -> void:
 	var screen_width = get_viewport_rect().size.x
 	var screen_height = get_viewport_rect().size.y
 	
-	# Generate dark background slate backdrop
-	var bg = ColorRect.new()
-	bg.name = "Background"
-	bg.size = Vector2(1152, 648)
-	bg.color = Color(0.08, 0.09, 0.12)
-	add_child(bg)
-	move_child(bg, 0)
-	
-	# Create an explicit Container node to wrap map obstacles cleanly
+	# Create map obstacles container node
 	var obstacles_node = Node2D.new()
 	obstacles_node.name = "Obstacles"
 	add_child(obstacles_node)
@@ -61,24 +54,35 @@ func _ready() -> void:
 	game_active = true
 	queue_redraw()
 	
-	# Fetch configurations from background NetworkManager Autoload script variables! [0.1]
+	# Extract global configuration configurations straight from background NetworkManager
 	selected_map = NetworkManager.selected_map
 	starting_lives_setting = NetworkManager.starting_lives
 	
-	# INSTRUCTION FIXED: Clear or delete the obstacles node loop if map selection choice is clear/plain
+	# --- 🛡️ INSTRUCTION FIXED: PULL DATA FROM AUTOLOAD INSTEAD OF OVERWRITING IT ---
+	# We safely extract the exact selections from the NetworkManager so your HUD can read them!
+	p1_selected_character = NetworkManager.player_choices.get(1, {}).get("class", "Slingshotter")
+	p1_selected_skill = NetworkManager.player_choices.get(1, {}).get("ability", "Piercing Shot")
+	
+	# Pull lookups for Player 2 / Bot using key 2 or "guest" keys
+	var p2_key = 2 if NetworkManager.player_choices.has(2) else "guest"
+	p2_selected_character = NetworkManager.player_choices.get(p2_key, {}).get("class", "Slingshotter")
+	p2_selected_skill = NetworkManager.player_choices.get(p2_key, {}).get("ability", "Piercing Shot")
+	
+	print("📊 Arena HUD Sync: P1=", p1_selected_character, " [", p1_selected_skill, "] | P2=", p2_selected_character, " [", p2_selected_skill, "]")
+	
+	# Clear obstacles container node if choice string demands clear plain geometry
 	if selected_map == "Open Empty Plain" or selected_map == "clear":
-		if has_node("Obstacles"):
-			get_node("Obstacles").queue_free()
-			print("🧼 Map Setup: Choice string is 'clear'. Deleted obstacles container layer successfully!")
+		if has_node("Obstacles"): get_node("Obstacles").queue_free()
+		print("🧼 Map Setup: Choice string is 'clear'. Deleted obstacles container layer successfully!")
 	else:
 		if multiplayer.multiplayer_peer == null or multiplayer.is_server():
 			var min_obs = 3 if selected_map == "Standard Field" else 6
-			var max_obs = 5 if selected_map == "Standard Field" else 9
+			var max_obs = 5 if selected_map == "Obstacles Chaos" else 9
 			generate_map_obstacles(screen_width, screen_height, min_obs, max_obs)
 			
-	# --- EVENT-DRIVEN PLAYER INSTANTIATION HANDSHAKES ---
-	if multiplayer.multiplayer_peer == null or multiplayer.get_unique_id() == 0:
-		# Offline fallback
+	# --- 🚀 EVENT-DRIVEN SIGNALS FRAMEWORK (DESTRUCTIVE OVERWRITES DELETED) ---
+	if multiplayer.multiplayer_peer == null or NetworkManager.vs_ai:
+		# Offline fallback spawning targets use unified Player.tscn
 		spawn_player(1, Vector2(120, screen_height / 2))
 		spawn_player(2, Vector2(screen_width - 120, screen_height / 2))
 	else:
@@ -89,58 +93,64 @@ func _ready() -> void:
 			)
 
 func spawn_player(peer_id: int, spawn_position: Vector2) -> void:
-	# INSTRUCTION FIXED: Read Choices Inside spawn_player() right after running instantiate() [0.1]!
-	var p_instance = PLAYER_SCENE.instantiate()
-	p_instance.name = str(peer_id)
+	var player_instance = PLAYER_SCENE.instantiate()
+	player_instance.name = str(peer_id)
 	
-	# Fetch final variable configurations securely out of our background NetworkManager autoload vault [0.1]!
-	var client_key = peer_id if NetworkManager.lobby_data.has(peer_id) else "guest"
-	p_instance.character_class = NetworkManager.lobby_data[client_key]["character"]
-	p_instance.selected_ability = NetworkManager.lobby_data[client_key]["ability"]
-	p_instance.lives = NetworkManager.starting_lives
+	# --- 🤖 INSTRUCTION FIXED: FIX THE BOT BEHAVIOR SCRIPT ASSIGNMENT ---
+	# If we are in single-player AI mode and spawning Player 2, transform this node into a functioning bot!
+	if NetworkManager.vs_ai and peer_id == 2:
+		player_instance.set_script(preload("res://EnemyAI.gd"))
+		print("🤖 AI Injector: Successfully attached EnemyAI.gd script onto Node ID: ", player_instance.name)
 	
-	# Pass pointer assignments to global trackers
-	if peer_id == 1: player1 = p_instance
-	else: player2 = p_instance
+	# Retrieve the selected data settings from the global autoload
+	var final_lookup_key = peer_id
+	if not NetworkManager.player_choices.has(final_lookup_key):
+		if peer_id != 1 and NetworkManager.player_choices.has(2):
+			final_lookup_key = 2
+		elif NetworkManager.player_choices.has("guest"):
+			final_lookup_key = "guest"
+			
+	var choices = NetworkManager.player_choices.get(final_lookup_key, {"class": "Slingshotter", "ability": "Piercing Shot"})
+	
+	player_instance.character_class = choices.get("class", "Slingshotter")
+	player_instance.selected_ability = choices.get("ability", "Piercing Shot")
+	player_instance.lives = NetworkManager.starting_lives
+	
+	if peer_id == 1: 
+		player1 = player_instance
+	else: 
+		player2 = player_instance
 		
-	add_child(p_instance, true) # Force clean human-readable replication name strings
-	p_instance.global_position = spawn_position
-	print("🚀 Spawned ", p_instance.character_class, " (Node: ", p_instance.name, ") with ", p_instance.lives, " Stocks.")
+	add_child(player_instance, true) 
+	player_instance.global_position = spawn_position
+	print("🚀 Spawner Hook: Instantiated Node ID ", player_instance.name, " as class: ", player_instance.character_class)
 
 func _process(delta: float) -> void:
 	if not game_active: return
+	active_ability_cooldown_time = NetworkManager.starting_lives # Lock matching scales
 	
-	# Fetch and map runtime positions down into variables for HUD processing lookups
-	if player1 == null:
-		if has_node("1"): player1 = get_node("1")
-		elif has_node("Player1"): player1 = get_node("Player1")
+	if player1 == null and has_node("1"): player1 = get_node("1")
 	if player2 == null:
-		if multiplayer.multiplayer_peer != null:
+		if has_node("2"): player2 = get_node("2")
+		else:
 			for peer in multiplayer.get_peers():
 				if has_node(str(peer)): player2 = get_node(str(peer))
-		if player2 == null and has_node("Player2"): player2 = get_node("Player2")
 
-	# --- P1 TEXT PRINT LINES ---
 	if is_instance_valid(player1):
 		var ammo_info = player1.get_ammo_string() if player1.has_method("get_ammo_string") else ""
 		var skill_info = player1.get_ability_status_string() if player1.has_method("get_ability_status_string") else ""
 		p1_hud_label.text = "  💙 P1 Lives: " + str(player1.lives) + " | HP: " + str(snappedf(player1.current_health, 0.1)) + "/" + str(player1.max_health) + ammo_info + skill_info
-		
 		var p1_timer = player1.get("local_ability_timer")
-		if p1_timer != null:
-			p1_ability_bar.value = (p1_timer / active_ability_cooldown_time) * 100.0
+		if p1_timer != null: p1_ability_bar.value = (p1_timer / 5.0) * 100.0
 		if player1.has_method("get_individual_bar_progress"):
 			for i in range(3): p1_bars[i].value = player1.get_individual_bar_progress(i) * 100.0
 
-	# --- P2 TEXT PRINT LINES ---
 	if is_instance_valid(player2):
 		var ammo_info = player2.get_ammo_string() if player2.has_method("get_ammo_string") else ""
 		var skill_info = player2.get_ability_status_string() if player2.has_method("get_ability_status_string") else ""
 		p2_hud_label.text = skill_info + ammo_info + " | P2 Lives: " + str(player2.lives) + " | HP: " + str(snappedf(player2.current_health, 0.1)) + "/" + str(player2.max_health) + " ❤️  "
-		
 		var p2_timer = player2.get("local_ability_timer")
-		if p2_timer != null:
-			p2_ability_bar.value = (p2_timer / active_ability_cooldown_time) * 100.0
+		if p2_timer != null: p2_ability_bar.value = (p2_timer / 5.0) * 100.0
 		if player2.has_method("get_individual_bar_progress"):
 			for i in range(3): p2_bars[i].value = player2.get_individual_bar_progress(i) * 100.0
 
@@ -264,24 +274,133 @@ func spawn_hit_particles(hit_position: Vector2, particle_color: Color) -> void:
 	particles.color = particle_color
 	get_tree().create_timer(0.5).timeout.connect(particles.queue_free)
 	
-func trigger_game_over(eliminated_id: int) -> void:
-	game_active = false
-	var win_id = 2 if eliminated_id == 1 else 1
-	var lbl = Label.new()
-	lbl.text = "🏆 PLAYER " + str(win_id) + " WINS! 🏆\nPress 'R' to Restart"
-	lbl.add_theme_font_size_override("font_size", 36)
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var center = CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
-	center.add_child(lbl)
 
+# --- 🎯 INSTRUCTION FIXED: THE "R" RESET BUTTON INTERCEPTOR ---
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel") or (event is InputEventKey and event.pressed and event.keycode == KEY_R):
-		if multiplayer.multiplayer_peer != null:
-			multiplayer.multiplayer_peer.close()
-			multiplayer.multiplayer_peer = null
-			get_tree().reload_current_scene()
+	if event is InputEventKey and event.pressed:
+		if event.keycode == KEY_R:
+			print("🔄 Reset Triggered: Cleaning match data entries and returning to the Lobby...")
+			
+			# Completely stripped out reload_current_scene()!
+			# Instead, we cleanly route players backward through your established scene workflow
+			if multiplayer.multiplayer_peer != null:
+				if multiplayer.is_server():
+					# Host forces both screens back to the lobby staging room simultaneously via RPC!
+					NetworkManager.rpc("change_scene", "res://Lobby.tscn")
+				else:
+					print("⏳ Guest pressed R. Waiting for Host to trigger lobby reset...")
+			else:
+				# Offline single-player mode transitions locally
+				get_tree().change_scene_to_file("res://Lobby.tscn")
+
+func trigger_game_over(eliminated_player_id: int) -> void:
+	game_active = false
+	var winner_id = 2 if eliminated_player_id == 1 else 1
+	
+	# Stop physics processing on current players
+	if is_instance_valid(player1): player1.set_physics_process(false)
+	if is_instance_valid(player2): player2.set_physics_process(false)
+	
+	# --- 1. CLEAN UP THE OVERLAPPING TEXT ---
+	# Hide the active gameplay HUD boxes completely right as the game ends!
+	if is_instance_valid(p1_hud_label): p1_hud_label.visible = false
+	if is_instance_valid(p2_hud_label): p2_hud_label.visible = false
+	if is_instance_valid(p1_ability_bar): p1_ability_bar.visible = false
+	if is_instance_valid(p2_ability_bar): p2_ability_bar.visible = false
+	for bar in p1_bars: if is_instance_valid(bar): bar.visible = false
+	for bar in p2_bars: if is_instance_valid(bar): bar.visible = false
+
+	# --- 2. ANCHOR AND CENTER THE POP-UP PANEL ---
+	# Create a styled Panel container to house the victory layout
+	var win_panel = Panel.new()
+	win_panel.name = "VictoryPopUpPanel"
+	add_child(win_panel)
+	
+	# Force the pop-up to use Godot's UI anchors to center itself perfectly on any resolution
+	win_panel.custom_minimum_size = Vector2(500, 250)
+	win_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	win_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	win_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	
+	# Set a centered VBox container to structure the text and buttons cleanly
+	var vbox = VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vbox.add_theme_constant_override("separation", 15)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	win_panel.add_child(vbox)
+	
+	# Build the large, clean victory title label text
+	var win_label = Label.new()
+	win_label.text = "🏆 PLAYER " + str(winner_id) + " WINS! 🏆"
+	win_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	win_label.add_theme_font_size_override("font_size", 32)
+	win_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2)) # Glowing Gold
+	vbox.add_child(win_label)
+	
+	# Build the secondary helper instruction label text
+	var help_label = Label.new()
+	help_label.text = "Press 'R' to return to the character select Lobby"
+	help_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	help_label.add_theme_font_size_override("font_size", 14)
+	vbox.add_child(help_label)
+
+	# --- 3. CREATE THE 'PLAY AGAIN' BUTTON ---
+	var play_again_btn = Button.new()
+	play_again_btn.name = "PlayAgainButton"
+	play_again_btn.text = "PLAY AGAIN"
+	play_again_btn.custom_minimum_size = Vector2(200, 45)
+	play_again_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	vbox.add_child(play_again_btn)
+	
+	# Network button guard constraints: Only the Host has permission to click the restart trigger
+	if multiplayer.multiplayer_peer != null and not multiplayer.is_server():
+		play_again_btn.text = "WAITING FOR HOST..."
+		play_again_btn.disabled = true
+	else:
+		play_again_btn.pressed.connect(_on_play_again_pressed)
+
+func _on_play_again_pressed() -> void:
+	print("🔄 Play Again Button pressed! Distributing match reload loops...")
+	
+	if multiplayer.multiplayer_peer == null or NetworkManager.vs_ai:
+		# --- OFFLINE RESET LOGIC (VS AI) ---
+		# Clear old player instances out of the arena map memory completely
+		if is_instance_valid(player1): player1.queue_free()
+		if is_instance_valid(player2): player2.queue_free()
+		
+		# Wipe remaining bullet projectile nodes currently traveling on screen
+		for child in get_children():
+			if child.name.begins_with("@Area2D@") or child.has_method("set_vector_trajectory"):
+				child.queue_free()
+		
+		# Restore HUD visibility parameters back to true for the next round
+		if is_instance_valid(p1_hud_label): p1_hud_label.visible = true
+		if is_instance_valid(p2_hud_label): p2_hud_label.visible = true
+		if is_instance_valid(p1_ability_bar): p1_ability_bar.visible = true
+		if is_instance_valid(p2_ability_bar): p2_ability_bar.visible = true
+		for bar in p1_bars: if is_instance_valid(bar): bar.visible = true
+		for bar in p2_bars: if is_instance_valid(bar): bar.visible = true
+		
+		# Delete the popup container panel node
+		if has_node("VictoryPopUpPanel"): get_node("VictoryPopUpPanel").queue_free()
+		
+		# Re-run your clean spawn player methods directly inside the arena locally!
+		var screen_width = get_viewport_rect().size.x
+		var screen_height = get_viewport_rect().size.y
+		game_active = true
+		spawn_player(1, Vector2(120, screen_height / 2))
+		spawn_player(2, Vector2(screen_width - 120, screen_height / 2))
+	else:
+		# --- ONLINE NETWORK RESET LOGIC (P2P) ---
+		# Host server triggers a synchronized scene reload so both machines jump at the exact same moment
+		rpc("sync_online_match_reload")
+
+# --- THE HIGH-LEVEL NETWORK MATCH RELOADER RPC ---
+@rpc("any_peer", "call_local", "reliable")
+func sync_online_match_reload() -> void:
+	print("🔌 Network Sync: Reloading fresh instance of CombatArena.tscn on this machine...")
+	get_tree().change_scene_to_file("res://CombatArena.tscn")
+
 
 func _on_peer_disconnected(id: int) -> void:
 	print("🚨 Peer client disconnected from lab row socket: ", id)

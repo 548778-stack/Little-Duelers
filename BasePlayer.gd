@@ -32,28 +32,37 @@ func _enter_tree() -> void:
 		print("⚡ Linked network authority directly to Peer ID integer: ", name.to_int())
 
 func _ready() -> void:
-	# DIRECTIONS FIX: The Network Sync Frame! Let data settle across the LAN wire [0.1]
+	# Wait one frame for the network to finish syncing names and authority [0.1]
 	await get_tree().physics_frame
 	
 	var arena = get_parent()
 	if not is_instance_valid(arena): return
 	
-	# --- DIRECTIONS FIX: DYNAMIC COLOR MATCHUP RULES ---
-	if multiplayer.multiplayer_peer != null:
-		# Instead of hardcoded strings, look at numeric strings ("1" is always host blue) [0.1]
-		if name == "1":
-			player_id = 1
-			if has_node("ColorRect"): $ColorRect.color = Color(0.2, 0.6, 1.0) # Blue
-			print("💙 Dynamic Matchup: Host verified. Assigned Blue tint.")
-		else:
-			player_id = 2
-			if has_node("ColorRect"): $ColorRect.color = Color(1.0, 0.3, 0.3) # Red
-			print("🔴 Dynamic Matchup: Guest verified. Assigned Red tint.")
+	# --- INSTRUCTION FIXED: TRIGGER VISUAL AND ABILITY UPDATES [0.1] ---
+	# Read whichever class and skill was assigned to this node container by the spawner!
+	match character_class:
+		"Recon":
+			speed = 600.0 
+			normal_cooldown_time = 0.4
+		"Slingshotter":
+			speed = 475.0 
+			normal_cooldown_time = 0.4
+		"Cowboy":
+			speed = 400.0 
+			normal_cooldown_time = 0.15 # Fast trigger fire!
+			current_ammo = max_ammo
+			
+	# Initialize spawn parameters cleanly
+	current_health = max_health
+	time_since_last_normal = normal_cooldown_time
+
+	# --- CHARACTER COLOR CODE BLOCKS ---
+	if name == "1" or name == "Player1":
+		player_id = 1
+		if has_node("ColorRect"): $ColorRect.color = Color(0.2, 0.6, 1.0) # Blue
 	else:
-		# Offline mode fallback
-		player_id = 1 if name == "Player1" else 2
-		if has_node("ColorRect"):
-			$ColorRect.color = Color(0.2, 0.6, 1.0) if player_id == 1 else Color(1.0, 0.3, 0.3)
+		player_id = 2
+		if has_node("ColorRect"): $ColorRect.color = Color(1.0, 0.3, 0.3) # Red
 
 func _physics_process(delta: float) -> void:
 	# DIRECTIONS FIX: Absolute first line authority loop guard [0.1]!

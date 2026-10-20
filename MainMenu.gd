@@ -27,4 +27,7 @@ func _on_join_button_pressed() -> void:
 	print("🔌 Connecting to Host IP: ", target_ip, "...")
 
 func _on_offline_button_pressed() -> void:
+	# IDENTIFY GAME MODE: Toggle the global autoload variable to true!
+	NetworkManager.vs_ai = true
+	print("🤖 Game Mode Identified: Offline Single Player vs AI Bot Activated.")
 	get_tree().change_scene_to_file("res://Lobby.tscn")

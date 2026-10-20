@@ -1,6 +1,17 @@
 extends Node
 
 const DEFAULT_PORT = 5000
+var vs_ai: bool = false
+
+# --- INSTRUCTION FIXED: CENTRALIZED P2P PLAYER CHOICE VAULT ---
+var player_choices: Dictionary = {
+	1: {"class": "Slingshotter", "ability": "Piercing Shot"},
+	"guest": {"class": "Slingshotter", "ability": "Piercing Shot"}
+}
+
+var selected_map: String = "Standard Field"
+var starting_lives: int = 3
+
 
 # --- THE LIFELONG P2P CONNECTION & DATA VAULT ---
 var lobby_data: Dictionary = {
@@ -8,8 +19,6 @@ var lobby_data: Dictionary = {
 	"guest": {"character": "Slingshotter", "ability": "Piercing Shot"}
 }
 
-var selected_map: String = "Standard Field"
-var starting_lives: int = 3
 
 func _ready() -> void:
 	# Keep network listeners permanently alive in the background
@@ -26,8 +35,10 @@ func _on_peer_connected(id: int) -> void:
 
 @rpc("any_peer", "call_local", "reliable")
 func change_scene(scene_path: String) -> void:
-	print("🚀 NetworkManager swapping layout screen to: ", scene_path)
+	if scene_path == "res://MainMenu.tscn":
+		vs_ai = false # Clean slate reset on menu exit
 	get_tree().change_scene_to_file(scene_path)
+
 
 func get_my_local_ip() -> String:
 	var addresses = IP.get_local_addresses()
