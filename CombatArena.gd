@@ -24,9 +24,22 @@ var p2_ability_bar: TextureProgressBar
 var p1_bars: Array[TextureProgressBar] = []
 var p2_bars: Array[TextureProgressBar] = []
 
+var lobby_selections: Dictionary = {
+	1: "Slingshotter",     # Default fallback for Host (ID 1)
+	"guest": "Slingshotter" # Default fallback for incoming Guest
+}
+
+var lobby_skills: Dictionary = {
+	1: "Piercing Shot",
+	"guest": "Piercing Shot"
+}
+
+
 # Preload your unified layout character scene asset
 const PLAYER_SCENE = preload("res://Player.tscn")
 const BOT_SCENE = preload("res://EnemyBot.tscn")
+
+# Update the _ready() loop inside CombatArena.gd to look exactly like this:
 
 func _ready() -> void:
 	var screen_width = get_viewport_rect().size.x
@@ -55,9 +68,9 @@ func _ready() -> void:
 			var max_obs = 5 if selected_map == "Standard Field" else 9
 			generate_map_obstacles(screen_width, screen_height, min_obs, max_obs)
 			
-	# --- 🚀 THE HIGH-LEVEL MULTIPLAYER SPAWNING FRAMEWORK ---
-	if multiplayer.multiplayer_peer == null or vs_ai_mode:
-		# OFFLINE SINGLE-PLAYER SPAWN LOOP
+	# --- 🚀 RESTRUCTURING: EVENT-DRIVEN SIGNALS FRAMEWORK ---
+	if vs_ai_mode:
+		# Offline single-player mode handles setup statically on frame 1
 		player1 = PLAYER_SCENE.instantiate()
 		player1.name = "Player1"
 		add_child(player1)
@@ -67,23 +80,43 @@ func _ready() -> void:
 		player2.name = "Player2"
 		add_child(player2)
 		player2.global_position = Vector2(screen_width - 120, screen_height / 2)
+		print("🎮 Offline Match successfully initialized.")
 	else:
-		# ONLINE P2P SPAWN LOOP: Only the host machine handles node instancing [0.1]!
+		# ONLINE P2P MODE: Completely removed peer array index lookups from here!
+		# Connect Godot's network framework signals to announce connections dynamically
+		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+		
 		if multiplayer.is_server():
-			var host_peer_id = 1
-			var guest_peer_id = multiplayer.get_peers()[0]
+			# 1. Host spawns themselves instantly as ID 1
+			spawn_player(1, Vector2(120, screen_height / 2))
 			
-			# Spawn Host Player Instance (Blue)
-			spawn_player(host_peer_id, Vector2(120, screen_height / 2))
-			# Spawn Guest Player Instance (Red)
-			spawn_player(guest_peer_id, Vector2(screen_width - 120, screen_height / 2))
+			# 2. REQUIRED INSTRUCTION: Hook up to the engine's built-in network connection signal!
+			# Whenever a client arrives, Godot catches their exact ID and handles the spawn safely
+			multiplayer.peer_connected.connect(func(id):
+				print("📡 Peer Connection Event: Client joined with ID ", id)
+				spawn_player(id, Vector2(screen_width - 120, screen_height / 2))
+			)
+
 
 func spawn_player(peer_id: int, spawn_position: Vector2) -> void:
-	# REQUIRED LOGIC FLOW: instantiate() ➔ name = str(peer_id) ➔ add_child() [0.1]
+	# Required Logic Sequence: instantiate() ➔ player.name = str(peer_id) ➔ add_child(player)
 	var p_instance = PLAYER_SCENE.instantiate()
-	p_instance.name = str(peer_id) # Unique Naming via Network Peer ID String [0.1]!
-	add_child(p_instance) # Adding child forces automatic replication to client monitor [0.1]
+	p_instance.name = str(peer_id)
+	
+	# Fetch character selections dynamically out of your lobby database map
+	if peer_id == 1:
+		p_instance.character_class = lobby_selections.get(1, "Slingshotter")
+		p_instance.selected_ability = lobby_skills.get(1, "Piercing Shot")
+		player1 = p_instance
+	else:
+		p_instance.character_class = lobby_selections.get(peer_id, lobby_selections.get("guest", "Slingshotter"))
+		p_instance.selected_ability = lobby_skills.get(peer_id, lobby_skills.get("guest", "Piercing Shot"))
+		player2 = p_instance
+		
+	add_child(p_instance, true) # Force clean human-readable network node naming
 	p_instance.global_position = spawn_position
+	print("🚀 Spawned Player Node: ", p_instance.name, " via connection event listener.")
+
 
 func _process(delta: float) -> void:
 	if not game_active: return
@@ -260,3 +293,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			multiplayer.multiplayer_peer.close()
 			multiplayer.multiplayer_peer = null
 			get_tree().reload_current_scene()
+
+func _on_peer_disconnected(id: int) -> void:
+	print("🚨 Peer client disconnected from lab row socket: ", id)
+	game_active = false
+	if multiplayer.multiplayer_peer != null:
+		multiplayer.multiplayer_peer.close()
+		multiplayer.multiplayer_peer = null
+	get_tree().reload_current_scene()
