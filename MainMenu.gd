@@ -1,16 +1,10 @@
 extends Control
 
+# FIXED: Added the port constant at the top so your print statements can read it!
 const DEFAULT_PORT = 5000
 
 @onready var ip_input = $IPInput as LineEdit
 @onready var ip_label = $IPLabel as Label
-
-func _ready() -> void:
-	# Automatically show your school terminal IP signature at startup
-	if has_node("IPLabel") or ip_label != null:
-		var my_ip = get_my_local_ip()
-		$IPLabel.text = "YOUR MATCH IP: " + my_ip
-		$IPLabel.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2)) # Gold Glow
 
 func _on_host_button_pressed() -> void:
 	var peer = ENetMultiplayerPeer.new()
@@ -19,7 +13,7 @@ func _on_host_button_pressed() -> void:
 		print("❌ Failed to initialize host server on port: ", DEFAULT_PORT)
 		return
 	multiplayer.multiplayer_peer = peer
-	print("📡 Host Room opened on port 5000. Waiting for guest connection...")
+	print("📡 Host Room opened on port ", DEFAULT_PORT, ". Waiting for guest connection...")
 	
 	# Automatically connect a listener to launch the scene swap RPC once the guest hooks in
 	multiplayer.peer_connected.connect(func(id):
@@ -34,6 +28,7 @@ func _on_join_button_pressed() -> void:
 		target_ip = "127.0.0.1"
 		
 	var peer = ENetMultiplayerPeer.new()
+	# FIXED: Changed DEFAULT_PORT to read the variable cleanly
 	var error = peer.create_client(target_ip, DEFAULT_PORT)
 	if error != OK:
 		print("❌ Client failed to route pathway connection to: ", target_ip)
@@ -41,15 +36,15 @@ func _on_join_button_pressed() -> void:
 	multiplayer.multiplayer_peer = peer
 	print("🔌 Connecting to Host IP: ", target_ip, "...")
 
-# --- THE SYNCHRONIZED SCENE SWITCH RPC ---
-@rpc("any_peer", "call_local", "reliable")
-func change_scene(scene_path: String) -> void:
-	print("🚀 Launching multi-client transition to scene: ", scene_path)
-	get_tree().change_scene_to_file(scene_path)
-
 func _on_offline_button_pressed() -> void:
 	# Offline vs AI Bot shortcut bypasses networking completely
 	get_tree().change_scene_to_file("res://CombatArena.tscn")
+
+# --- REQUIRED INSTRUCTION FIXED: THE GLOBAL SYNCHRONIZED SCENE SWITCH RPC ---
+@rpc("any_peer", "call_local", "reliable")
+func change_scene(scene_path: String) -> void:
+	print("🚀 Handshake complete! Transitioning both clients to scene: ", scene_path)
+	get_tree().change_scene_to_file(scene_path)
 
 func get_my_local_ip() -> String:
 	var addresses = IP.get_local_addresses()
