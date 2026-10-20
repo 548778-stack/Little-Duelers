@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://b5av4kpn5effo"]
 
-[ext_resource type="Script" uid="uid://cw7neaq7jc423" path="res://CombatArena.gd" id="1_i26rj"]
+[ext_resource type="Script" uid="uid://chd2kikvp3scw" path="res://MainMenu.gd" id="1_i26rj"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_i26rj"]
 bg_color = Color(0.11764706, 0.14117648, 0.18039216, 1)
