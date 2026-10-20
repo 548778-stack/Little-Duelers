@@ -18,6 +18,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 GlobalLobby="*uid://da2vtofx5h0jy"
+NetworkManager="*uid://buqnqxlefyfqw"
 
 [input]
 

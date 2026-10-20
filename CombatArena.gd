@@ -40,7 +40,6 @@ const PLAYER_SCENE = preload("res://Player.tscn")
 const BOT_SCENE = preload("res://EnemyBot.tscn")
 
 # Update the _ready() loop inside CombatArena.gd to look exactly like this:
-
 func _ready() -> void:
 	var screen_width = get_viewport_rect().size.x
 	var screen_height = get_viewport_rect().size.y
@@ -53,74 +52,60 @@ func _ready() -> void:
 	add_child(bg)
 	move_child(bg, 0)
 	
+	# Create an explicit Container node to wrap map obstacles cleanly
+	var obstacles_node = Node2D.new()
+	obstacles_node.name = "Obstacles"
+	add_child(obstacles_node)
+	
 	setup_hud(screen_width)
 	game_active = true
 	queue_redraw()
 	
-	# Determine if we are online or playing solo offline vs the computer bot
-	if multiplayer.multiplayer_peer == null or multiplayer.get_unique_id() == 0:
-		vs_ai_mode = true
-		
-	# --- MAP LAYOUT SECTOR GENERATOR ---
-	if multiplayer.multiplayer_peer == null or multiplayer.is_server():
-		if selected_map != "Open Empty Plain":
+	# Fetch configurations from background NetworkManager Autoload script variables! [0.1]
+	selected_map = NetworkManager.selected_map
+	starting_lives_setting = NetworkManager.starting_lives
+	
+	# INSTRUCTION FIXED: Clear or delete the obstacles node loop if map selection choice is clear/plain
+	if selected_map == "Open Empty Plain" or selected_map == "clear":
+		if has_node("Obstacles"):
+			get_node("Obstacles").queue_free()
+			print("🧼 Map Setup: Choice string is 'clear'. Deleted obstacles container layer successfully!")
+	else:
+		if multiplayer.multiplayer_peer == null or multiplayer.is_server():
 			var min_obs = 3 if selected_map == "Standard Field" else 6
 			var max_obs = 5 if selected_map == "Standard Field" else 9
 			generate_map_obstacles(screen_width, screen_height, min_obs, max_obs)
 			
-	# --- 🚀 RESTRUCTURING: EVENT-DRIVEN SIGNALS FRAMEWORK ---
-	if vs_ai_mode:
-		# Offline single-player mode handles setup statically on frame 1
-		player1 = PLAYER_SCENE.instantiate()
-		player1.name = "Player1"
-		add_child(player1)
-		player1.global_position = Vector2(120, screen_height / 2)
-		
-		player2 = BOT_SCENE.instantiate()
-		player2.name = "Player2"
-		add_child(player2)
-		player2.global_position = Vector2(screen_width - 120, screen_height / 2)
-		print("🎮 Offline Match successfully initialized.")
+	# --- EVENT-DRIVEN PLAYER INSTANTIATION HANDSHAKES ---
+	if multiplayer.multiplayer_peer == null or multiplayer.get_unique_id() == 0:
+		# Offline fallback
+		spawn_player(1, Vector2(120, screen_height / 2))
+		spawn_player(2, Vector2(screen_width - 120, screen_height / 2))
 	else:
-		# ONLINE P2P MODE: Completely removed peer array index lookups from here!
-		# Connect Godot's network framework signals to announce connections dynamically
-		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
-		
 		if multiplayer.is_server():
-			# 1. Host spawns themselves instantly as ID 1
 			spawn_player(1, Vector2(120, screen_height / 2))
-			
-			# 2. REQUIRED INSTRUCTION: Hook up to the engine's built-in network connection signal!
-			# Whenever a client arrives, Godot catches their exact ID and handles the spawn safely
 			multiplayer.peer_connected.connect(func(id):
-				print("📡 Peer Connection Event: Client joined with ID ", id)
 				spawn_player(id, Vector2(screen_width - 120, screen_height / 2))
 			)
 
 func spawn_player(peer_id: int, spawn_position: Vector2) -> void:
-	# Required Logic Sequence: instantiate() ➔ player.name = str(peer_id) ➔ add_child(player) [0.1]
+	# INSTRUCTION FIXED: Read Choices Inside spawn_player() right after running instantiate() [0.1]!
 	var p_instance = PLAYER_SCENE.instantiate()
 	p_instance.name = str(peer_id)
 	
-	# READ FINAL LOBBY CONFIGURATIONS: Safely extract class strings from your persistent vault [0.1]!
-	if peer_id == 1:
-		p_instance.character_class = GlobalLobby.lobby_selections.get(1, "Slingshotter")
-		p_instance.selected_ability = GlobalLobby.lobby_skills.get(1, "Piercing Shot")
-		p_instance.lives = GlobalLobby.starting_lives_setting
-		player1 = p_instance
-	else:
-		p_instance.character_class = GlobalLobby.lobby_selections.get(peer_id, GlobalLobby.lobby_selections.get("guest", "Slingshotter"))
-		p_instance.selected_ability = GlobalLobby.lobby_skills.get(peer_id, GlobalLobby.lobby_skills.get("guest", "Piercing Shot"))
-		p_instance.lives = GlobalLobby.starting_lives_setting
-		player2 = p_instance
+	# Fetch final variable configurations securely out of our background NetworkManager autoload vault [0.1]!
+	var client_key = peer_id if NetworkManager.lobby_data.has(peer_id) else "guest"
+	p_instance.character_class = NetworkManager.lobby_data[client_key]["character"]
+	p_instance.selected_ability = NetworkManager.lobby_data[client_key]["ability"]
+	p_instance.lives = NetworkManager.starting_lives
+	
+	# Pass pointer assignments to global trackers
+	if peer_id == 1: player1 = p_instance
+	else: player2 = p_instance
 		
-	# Update match lives setting limits globally inside the arena loop container properties
-	starting_lives_setting = GlobalLobby.starting_lives_setting
-	selected_map = GlobalLobby.selected_map
-		
-	add_child(p_instance, true) # Force clean human-readable network node naming
+	add_child(p_instance, true) # Force clean human-readable replication name strings
 	p_instance.global_position = spawn_position
-	print("🚀 Combat Setup: Spawned ", p_instance.character_class, " (Node ID: ", p_instance.name, ") with ", p_instance.lives, " Lives.")
+	print("🚀 Spawned ", p_instance.character_class, " (Node: ", p_instance.name, ") with ", p_instance.lives, " Stocks.")
 
 func _process(delta: float) -> void:
 	if not game_active: return
