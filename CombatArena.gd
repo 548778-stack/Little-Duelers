@@ -235,15 +235,13 @@ func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 		if selected_map != "Open Empty Plain":
 			# Host computes the rocks and calls the RPC engine to draw them on the guest!
 			generate_and_sync_obstacles(screen_width, screen_height, min_obs, max_obs)
-
-# Inside CombatArena.gd -> Replace your character spawning section inside sync_lobby_and_start():
-
-	# 4. P2P UNIQUE ID NODE SPINNER LAUNCHER
+			
+	# 1. CONSOLIDATED: We preload ONE single master player asset file for both clients!
 	var player_scene = preload("res://Player.tscn")
 	var bot_scene = preload("res://EnemyBot.tscn")
 	
 	if vs_ai_mode or multiplayer.multiplayer_peer == null:
-		# --- OFFLINE MODE: Fallback to baseline default setups ---
+		# --- OFFLINE MODE: Spawn Human Player 1 and the Dedicated AI Bot ---
 		player1 = player_scene.instantiate()
 		player1.name = "Player1"
 		add_child(player1)
@@ -254,40 +252,31 @@ func sync_lobby_and_start(m_map, m_lives, p1_c, p1_s, p2_c, p2_s) -> void:
 		add_child(player2)
 		player2.global_position = Vector2(screen_width - 120, screen_height / 2)
 		
-		print("🎮 Offline Match Successfully Initialized.")
+		print("🎮 Offline Match successfully initialized using Player.tscn and EnemyBot.tscn.")
 		
 	else:
-		# --- ONLINE P2P MODE ---
+		# --- ONLINE P2P MODE: Only the Server/Host runs this generation block ---
 		if multiplayer.is_server():
 			var host_id = 1
 			var guest_id = multiplayer.get_peers() if multiplayer.get_peers().size() > 0 else 1
 			
-# Inside CombatArena.gd -> Replace your player property assignments inside sync_lobby_and_start():
-
 			# --- 🚀 SPAWN PLAYER 1 (HOST) ---
 			player1 = player_scene.instantiate()
-			player1.name = str(host_id) 
-			
-			# FIXED CORRECTION LOGIC: Use a key lookup with a fallback safeguard!
+			player1.name = str(host_id) # Unique Naming via Peer ID String!
 			player1.character_class = lobby_selections.get(host_id, "Slingshotter")
 			player1.selected_ability = lobby_skills.get(host_id, "Piercing Shot")
-			
-			add_child(player1) 
+			add_child(player1)
 			player1.global_position = Vector2(120, screen_height / 2)
 			
 			# --- 🚀 SPAWN PLAYER 2 (GUEST) ---
 			player2 = player_scene.instantiate()
-			player2.name = str(guest_id) 
-			
-			# FIXED CORRECTION LOGIC: Read cleanly from the guest dict keys!
+			player2.name = str(guest_id) # Unique Naming via Peer ID String!
 			player2.character_class = lobby_selections.get("guest", "Slingshotter")
 			player2.selected_ability = lobby_skills.get("guest", "Piercing Shot")
-			
-			add_child(player2) 
+			add_child(player2) # Spawner auto-replicates Player.tscn down to Guest!
 			player2.global_position = Vector2(screen_width - 120, screen_height / 2)
-
 			
-			print("📡 Host enforced clean spawning timeline order successfully!")
+			print("📡 P2P Nodes Instantiated! Consolidated purely on Player.tscn with Peer ID strings: P1=", host_id, " | P2=", guest_id)
 
 func generate_and_sync_obstacles(screen_width: float, screen_height: float, min_c: int, max_c: int) -> void:
 	var center_x = screen_width / 2
@@ -398,44 +387,28 @@ func setup_hud(screen_width: float) -> void:
 	p2_ability_bar.max_value = 100
 	p2_vbox.add_child(p2_ability_bar)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	if not game_active: return
 	
-	# Check if the spawner has instantiated the scenes onto the machine tree layer yet
-	if player1 == null and has_node("Player1"): player1 = get_node("Player1")
-	if player2 == null and has_node("Player2"): player2 = get_node("Player2")
-
-	# --- 🖥️ RESTORED: PLAYER 1 HUD DOCK GRAPHICS TRACKER ---
+	# Keep only the global timer tracking clocks:
+	time_since_last_ability += delta
+	
+	# --- RESTORED HUD TRACKER MATRICES ---
 	if is_instance_valid(player1):
-		# 1. Fetch current Cowboy weapon ammo clips or abilities string layouts cleanly
 		var ammo_info = player1.get_ammo_string() if player1.has_method("get_ammo_string") else ""
 		var skill_info = player1.get_ability_status_string() if player1.has_method("get_ability_status_string") else ""
-		
-		# 2. Print the exact floating decimal health values beautifully onto the HUD Label
 		p1_hud_label.text = "  💙 P1 Lives: " + str(player1.lives) + " | HP: " + str(snappedf(player1.current_health, 0.1)) + "/" + str(player1.max_health) + ammo_info + skill_info
 		
-		# 3. Paint the localized ability progress line bar smoothly using its personal timer
-		p1_ability_bar.value = (player1.get("local_ability_timer") / active_ability_cooldown_time) * 100.0
-		
-		# 4. Render special attack inventory progress charge bars natively
-		if player1.has_method("get_individual_bar_progress"):
-			for i in range(3): 
-				p1_bars[i].value = player1.get_individual_bar_progress(i) * 100.0
-		else:
-			for i in range(3):
-				p1_bars[i].value = 100.0 if player1.get("special_charges") > i else 0.0
+		var p1_timer = player1.get("local_ability_timer")
+		if p1_timer != null and typeof(p1_timer) in [TYPE_INT, TYPE_FLOAT]:
+			p1_ability_bar.value = (p1_timer / active_ability_cooldown_time) * 100.0
 
-	# --- 🔴 RESTORED: PLAYER 2 / ENEMY BOT HUD DOCK GRAPHICS TRACKER ---
 	if is_instance_valid(player2):
 		var ammo_info = player2.get_ammo_string() if player2.has_method("get_ammo_string") else ""
 		var skill_info = player2.get_ability_status_string() if player2.has_method("get_ability_status_string") else ""
-		
 		p2_hud_label.text = skill_info + ammo_info + " | P2 Lives: " + str(player2.lives) + " | HP: " + str(snappedf(player2.current_health, 0.1)) + "/" + str(player2.max_health) + " ❤️  "
 		
-		# FIXED: 1. Extract the variable first
 		var p2_timer = player2.get("local_ability_timer")
-		
-		# FIXED: 2. Check if it is a valid number before dividing so it never crashes!
 		if p2_timer != null and typeof(p2_timer) in [TYPE_INT, TYPE_FLOAT]:
 			p2_ability_bar.value = (p2_timer / active_ability_cooldown_time) * 100.0
 		else:
@@ -448,7 +421,6 @@ func _process(_delta: float) -> void:
 		else:
 			for i in range(3):
 				p2_bars[i].value = 100.0 if player2.get("special_charges") > i else 0.0
-
 
 func _draw() -> void:
 	var screen_width = get_viewport_rect().size.x
