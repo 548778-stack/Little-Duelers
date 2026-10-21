@@ -93,16 +93,16 @@ func _ready() -> void:
 			)
 
 func spawn_player(peer_id: int, spawn_position: Vector2) -> void:
+	# FIXED NESTED ORDER FLOW: 1. Instantiate completely out of memory [1.2]
 	var player_instance = PLAYER_SCENE.instantiate()
+	
+	# FIXED NESTED ORDER FLOW: 2. Assign the exact numeric network string ID [1.2]
 	player_instance.name = str(peer_id)
 	
-	# --- 🤖 INSTRUCTION FIXED: FIX THE BOT BEHAVIOR SCRIPT ASSIGNMENT ---
-	# If we are in single-player AI mode and spawning Player 2, transform this node into a functioning bot!
-	if NetworkManager.vs_ai and peer_id == 2:
-		player_instance.set_script(preload("res://EnemyAI.gd"))
-		print("🤖 AI Injector: Successfully attached EnemyAI.gd script onto Node ID: ", player_instance.name)
+	# FIXED NESTED ORDER FLOW: 3. Set the global position before tree birth [1.2]
+	player_instance.global_position = spawn_position
 	
-	# Retrieve the selected data settings from the global autoload
+	# Retrieve choice details from the global autoload configurations
 	var final_lookup_key = peer_id
 	if not NetworkManager.player_choices.has(final_lookup_key):
 		if peer_id != 1 and NetworkManager.player_choices.has(2):
@@ -121,9 +121,10 @@ func spawn_player(peer_id: int, spawn_position: Vector2) -> void:
 	else: 
 		player2 = player_instance
 		
+	# FIXED NESTED ORDER FLOW: 4. Add child LAST to trigger the MultiplayerSpawner safely [1.2]!
 	add_child(player_instance, true) 
-	player_instance.global_position = spawn_position
-	print("🚀 Spawner Hook: Instantiated Node ID ", player_instance.name, " as class: ", player_instance.character_class)
+	
+	print("📡 Spawner Order Enforced: Instantiated Node string ID ", player_instance.name, " directly at position ", spawn_position)
 
 func _process(delta: float) -> void:
 	if not game_active: return
@@ -194,60 +195,101 @@ func spawn_local_obstacle(id: int, obs_position: Vector2, obs_size: Vector2) -> 
 func setup_hud(screen_width: float) -> void:
 	var canvas_layer = CanvasLayer.new()
 	add_child(canvas_layer)
+	
 	var main_hbox = HBoxContainer.new()
 	main_hbox.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
 	main_hbox.custom_minimum_size = Vector2(screen_width, 100)
 	canvas_layer.add_child(main_hbox)
+	
 	var img = Image.create_empty(16, 16, false, Image.FORMAT_RGBA8)
 	img.fill(Color.WHITE)
 	var white_texture = ImageTexture.create_from_image(img)
 	
-	var p1_vbox = VBoxContainer.new()
-	p1_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	main_hbox.add_child(p1_vbox)
-	p1_hud_label = Label.new()
-	p1_hud_label.add_theme_font_size_override("font_size", 20)
-	p1_hud_label.add_theme_color_override("font_color", Color(0.4, 0.75, 1.0))
-	p1_vbox.add_child(p1_hud_label)
-	var p1_bars_row = HBoxContainer.new()
-	p1_vbox.add_child(p1_bars_row)
-	for i in range(3):
-		var bar = TextureProgressBar.new()
-		bar.custom_minimum_size = Vector2(50, 6)
-		bar.texture_progress = white_texture
-		bar.tint_progress = Color(1.0, 0.85, 0.2)
-		p1_bars_row.add_child(bar)
-		p1_bars.append(bar)
-	p1_ability_bar = TextureProgressBar.new()
-	p1_ability_bar.custom_minimum_size = Vector2(162, 6)
-	p1_ability_bar.texture_progress = white_texture
-	p1_ability_bar.tint_progress = Color(0.2, 1.0, 0.5)
-	p1_vbox.add_child(p1_ability_bar)
+	# --- 🖥️ FIXED: DYNAMIC NETWORK UI IDENTITY INVERSION MATRIX ---
+	var is_local_host = true
+	if multiplayer.multiplayer_peer != null and multiplayer.get_unique_id() != 1:
+		is_local_host = false # Current computer running this code is the Guest Client! [1.2]
+		
+	# --- LEFT SIDE DOCK (Always handles Local Player inputs) ---
+	var left_vbox = VBoxContainer.new()
+	left_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	main_hbox.add_child(left_vbox)
 	
-	var p2_vbox = VBoxContainer.new()
-	p2_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	main_hbox.add_child(p2_vbox)
-	p2_hud_label = Label.new()
-	p2_hud_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	p2_hud_label.add_theme_font_size_override("font_size", 20)
-	p2_hud_label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
-	p2_vbox.add_child(p2_hud_label)
-	var p2_bars_row = HBoxContainer.new()
-	p2_bars_row.alignment = BoxContainer.ALIGNMENT_END
-	p2_vbox.add_child(p2_bars_row)
+	var left_hud_label = Label.new()
+	left_hud_label.add_theme_font_size_override("font_size", 20)
+	left_vbox.add_child(left_hud_label)
+	
+	var left_bars_row = HBoxContainer.new()
+	left_vbox.add_child(left_bars_row)
+	var left_bars_array: Array[TextureProgressBar] = []
 	for i in range(3):
 		var bar = TextureProgressBar.new()
 		bar.custom_minimum_size = Vector2(50, 6)
 		bar.texture_progress = white_texture
 		bar.tint_progress = Color(1.0, 0.85, 0.2)
-		p2_bars_row.add_child(bar)
-		p2_bars.append(bar)
-	p2_ability_bar = TextureProgressBar.new()
-	p2_ability_bar.custom_minimum_size = Vector2(162, 6)
-	p2_ability_bar.size_flags_horizontal = Control.SIZE_SHRINK_END
-	p2_ability_bar.texture_progress = white_texture
-	p2_ability_bar.tint_progress = Color(0.2, 1.0, 0.5)
-	p2_vbox.add_child(p2_ability_bar)
+		left_bars_row.add_child(bar)
+		left_bars_array.append(bar)
+		
+	var left_ability_bar = TextureProgressBar.new()
+	left_ability_bar.custom_minimum_size = Vector2(162, 6)
+	left_ability_bar.texture_progress = white_texture
+	left_ability_bar.tint_progress = Color(0.2, 1.0, 0.5)
+	left_vbox.add_child(left_ability_bar)
+	
+	# --- RIGHT SIDE DOCK (Always handles Remote Player inputs) ---
+	var right_vbox = VBoxContainer.new()
+	right_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	main_hbox.add_child(right_vbox)
+	
+	var right_hud_label = Label.new()
+	right_hud_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	right_hud_label.add_theme_font_size_override("font_size", 20)
+	right_vbox.add_child(right_hud_label)
+	
+	var right_bars_row = HBoxContainer.new()
+	right_bars_row.alignment = BoxContainer.ALIGNMENT_END
+	right_vbox.add_child(right_bars_row)
+	var right_bars_array: Array[TextureProgressBar] = []
+	for i in range(3):
+		var bar = TextureProgressBar.new()
+		bar.custom_minimum_size = Vector2(50, 6)
+		bar.texture_progress = white_texture
+		bar.tint_progress = Color(1.0, 0.85, 0.2)
+		right_bars_row.add_child(bar)
+		right_bars_array.append(bar)
+		
+	var right_ability_bar = TextureProgressBar.new()
+	right_ability_bar.custom_minimum_size = Vector2(162, 6)
+	right_ability_bar.size_flags_horizontal = Control.SIZE_SHRINK_END
+	right_ability_bar.texture_progress = white_texture
+	right_ability_bar.tint_progress = Color(0.2, 1.0, 0.5)
+	right_vbox.add_child(right_ability_bar)
+
+	# --- ASSIGN POINTERS CLEANLY BASED ON IDENTITY SHIELD ---
+	if is_local_host:
+		# Host sees P1 as Left (Blue), P2 as Right (Red) [1.2]
+		p1_hud_label = left_hud_label
+		p1_hud_label.add_theme_color_override("font_color", Color(0.4, 0.75, 1.0)) # Blue
+		p1_ability_bar = left_ability_bar
+		p1_bars = left_bars_array
+		
+		p2_hud_label = right_hud_label
+		p2_hud_label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4)) # Red
+		p2_ability_bar = right_ability_bar
+		p2_bars = right_bars_array
+	else:
+		# Guest inverts: P2 is Left (Red Local), P1 is Right (Blue Remote) [1.2]
+		p2_hud_label = left_hud_label
+		p2_hud_label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4)) # Red
+		p2_ability_bar = left_ability_bar
+		p2_bars = left_bars_array
+		
+		p1_hud_label = right_hud_label
+		p1_hud_label.add_theme_color_override("font_color", Color(0.4, 0.75, 1.0)) # Blue
+		p1_ability_bar = right_ability_bar
+		p1_bars = right_bars_array
+		
+	print("🔌 HUD Configuration complete! View alignment locked for unique machine ID: ", multiplayer.get_unique_id())
 
 func spawn_crit_hit_marker(hit_position: Vector2) -> void:
 	var marker = Label.new()

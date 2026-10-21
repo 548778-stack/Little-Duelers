@@ -144,6 +144,9 @@ func _input(event: InputEvent) -> void:
 func request_server_bullet_spawn(type: String, start_pos: Vector2, fire_dir: Vector2, owner_id: int, owner_class: String) -> void:
 	if multiplayer.is_server() or multiplayer.multiplayer_peer == null:
 		var arena = get_parent()
+		if not is_instance_valid(arena): return
+		
+		# Load your registered Projectile Scene asset [1.2]
 		var projectile_scene = preload("res://Projectile.tscn")
 		var bullet = projectile_scene.instantiate()
 		
@@ -157,7 +160,9 @@ func request_server_bullet_spawn(type: String, start_pos: Vector2, fire_dir: Vec
 		bullet.set_meta("damage_amount", base_damage)
 		bullet.set_meta("is_critical", (type == "marksman_normal"))
 		
+		# DIRECTIONS FIX: Append the bullet exactly to the node set as the spawner's path with the true flag [1.2]!
 		arena.add_child(bullet, true)
+		
 		bullet.global_position = start_pos + (fire_dir * 45.0)
 		if bullet.has_method("set_vector_trajectory"):
 			bullet.set_vector_trajectory(fire_dir)
