@@ -301,8 +301,7 @@ func trigger_game_over(eliminated_player_id: int) -> void:
 	if is_instance_valid(player1): player1.set_physics_process(false)
 	if is_instance_valid(player2): player2.set_physics_process(false)
 	
-	# --- 1. CLEAN UP THE OVERLAPPING TEXT ---
-	# Hide the active gameplay HUD boxes completely right as the game ends!
+	# Clean up overlapping text by hiding active gameplay HUD elements completely
 	if is_instance_valid(p1_hud_label): p1_hud_label.visible = false
 	if is_instance_valid(p2_hud_label): p2_hud_label.visible = false
 	if is_instance_valid(p1_ability_bar): p1_ability_bar.visible = false
@@ -310,97 +309,105 @@ func trigger_game_over(eliminated_player_id: int) -> void:
 	for bar in p1_bars: if is_instance_valid(bar): bar.visible = false
 	for bar in p2_bars: if is_instance_valid(bar): bar.visible = false
 
-	# --- 2. ANCHOR AND CENTER THE POP-UP PANEL ---
-	# Create a styled Panel container to house the victory layout
-	var win_panel = Panel.new()
-	win_panel.name = "VictoryPopUpPanel"
-	add_child(win_panel)
-	
-	# Force the pop-up to use Godot's UI anchors to center itself perfectly on any resolution
-	win_panel.custom_minimum_size = Vector2(500, 250)
-	win_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	win_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	win_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
-	
-	# Set a centered VBox container to structure the text and buttons cleanly
-	var vbox = VBoxContainer.new()
-	vbox.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	vbox.add_theme_constant_override("separation", 15)
-	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	win_panel.add_child(vbox)
-	
-	# Build the large, clean victory title label text
-	var win_label = Label.new()
-	win_label.text = "🏆 PLAYER " + str(winner_id) + " WINS! 🏆"
-	win_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	win_label.add_theme_font_size_override("font_size", 32)
-	win_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2)) # Glowing Gold
-	vbox.add_child(win_label)
-	
-	# Build the secondary helper instruction label text
-	var help_label = Label.new()
-	help_label.text = "Press 'R' to return to the character select Lobby"
-	help_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	help_label.add_theme_font_size_override("font_size", 14)
-	vbox.add_child(help_label)
+	# --- 🛡️ 1. USE A CANVASLAYER PARENT SAFEGUARD ---
+	var win_canvas_layer = CanvasLayer.new()
+	win_canvas_layer.name = "VictoryCanvasLayer"
+	add_child(win_canvas_layer)
 
-	# --- 3. CREATE THE 'PLAY AGAIN' BUTTON ---
+	# --- 🌍 2. ADD A CLEAN VISUAL BACKGROUND TO THE TEXT ---
+	# Create a solid UI background panel to act as a background overlay [0.1]
+	var bg_overlay = ColorRect.new()
+	bg_overlay.name = "VictoryBackgroundOverlay"
+	bg_overlay.color = Color(0.0, 0.0, 0.0, 0.7) # Semi-transparent cinematic black [0.1]
+	win_canvas_layer.add_child(bg_overlay)
+	
+	# Force the background to cover the whole screen [0.1]
+	bg_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	# --- 🚀 3. THE FULL-SCREEN BOX AND ALIGNMENTS ---
+	# Add the victory text label as a child of that background rect [0.1]!
+	var win_label = Label.new()
+	win_label.name = "VictoryTextLabel"
+	bg_overlay.add_child(win_label)
+	
+	# Configure the text label bounding box to stretch across the center [0.1]
+	win_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	win_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	win_label.grow_vertical = Control.GROW_DIRECTION_BOTH
+
+	# Apply true text centering alignments [0.1]
+	win_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	win_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+
+	# Boost Font Size via Theme Overrides [0.1]
+	win_label.add_theme_font_size_override("font_size", 48)
+	win_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2)) # Glowing Golden Yellow
+	win_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0)) # Black border outline
+	win_label.add_theme_constant_override("outline_size", 12)
+	
+	# Set your explicit victory proclamation text message strings
+	win_label.text = "🏆 PLAYER " + str(winner_id) + " WINS! 🏆\n\n"
+	print("👑 Presentation Setup: Cinematic full-screen background overlay initialized cleanly.")
+
+	# --- 4. CENTERED RESTART BUTTON CONTAINER ---
+	# Set a centered VBox container inside the overlay to structure the button underneath the text
+	var vbox = VBoxContainer.new()
+	vbox.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	vbox.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	vbox.grow_vertical = Control.GROW_DIRECTION_BOTH
+	vbox.custom_minimum_size = Vector2(0, -180) # Offsets the layout space downward
+	vbox.alignment = BoxContainer.ALIGNMENT_END
+	bg_overlay.add_child(vbox)
+	
 	var play_again_btn = Button.new()
 	play_again_btn.name = "PlayAgainButton"
 	play_again_btn.text = "PLAY AGAIN"
-	play_again_btn.custom_minimum_size = Vector2(200, 45)
+	play_again_btn.custom_minimum_size = Vector2(220, 50)
 	play_again_btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	vbox.add_child(play_again_btn)
 	
-	# Network button guard constraints: Only the Host has permission to click the restart trigger
+	var help_label = Label.new()
+	help_label.text = "Press 'R' key to return to Lobby"
+	help_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	help_label.add_theme_font_size_override("font_size", 14)
+	vbox.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	vbox.add_child(help_label)
+	
+	# Network button locks: Only the Host has permission to click the restart trigger
 	if multiplayer.multiplayer_peer != null and not multiplayer.is_server():
 		play_again_btn.text = "WAITING FOR HOST..."
 		play_again_btn.disabled = true
 	else:
 		play_again_btn.pressed.connect(_on_play_again_pressed)
 
+# Update the play again button callback handlers inside CombatArena.gd:
+
 func _on_play_again_pressed() -> void:
-	print("🔄 Play Again Button pressed! Distributing match reload loops...")
+	print("🔄 Play Again Button pressed! Executing scene reset sequence...")
 	
 	if multiplayer.multiplayer_peer == null or NetworkManager.vs_ai:
-		# --- OFFLINE RESET LOGIC (VS AI) ---
-		# Clear old player instances out of the arena map memory completely
-		if is_instance_valid(player1): player1.queue_free()
-		if is_instance_valid(player2): player2.queue_free()
-		
-		# Wipe remaining bullet projectile nodes currently traveling on screen
-		for child in get_children():
-			if child.name.begins_with("@Area2D@") or child.has_method("set_vector_trajectory"):
-				child.queue_free()
-		
-		# Restore HUD visibility parameters back to true for the next round
-		if is_instance_valid(p1_hud_label): p1_hud_label.visible = true
-		if is_instance_valid(p2_hud_label): p2_hud_label.visible = true
-		if is_instance_valid(p1_ability_bar): p1_ability_bar.visible = true
-		if is_instance_valid(p2_ability_bar): p2_ability_bar.visible = true
-		for bar in p1_bars: if is_instance_valid(bar): bar.visible = true
-		for bar in p2_bars: if is_instance_valid(bar): bar.visible = true
-		
-		# Delete the popup container panel node
-		if has_node("VictoryPopUpPanel"): get_node("VictoryPopUpPanel").queue_free()
-		
-		# Re-run your clean spawn player methods directly inside the arena locally!
-		var screen_width = get_viewport_rect().size.x
-		var screen_height = get_viewport_rect().size.y
-		game_active = true
-		spawn_player(1, Vector2(120, screen_height / 2))
-		spawn_player(2, Vector2(screen_width - 120, screen_height / 2))
+		# --- 🛡️ THE OFFLINE/AI MODE FIX ---
+		# Cleanly reload the entire world file fresh from disk! [0.1]
+		print("🧼 Offline Reset: Wiping current session data and loading clean file from disk.")
+		get_tree().change_scene_to_file("res://CombatArena.tscn")
 	else:
-		# --- ONLINE NETWORK RESET LOGIC (P2P) ---
-		# Host server triggers a synchronized scene reload so both machines jump at the exact same moment
-		rpc("sync_online_match_reload")
+		# --- 📡 THE ONLINE/NETWORK MODE FIX ---
+		# Clicking the button invokes a synchronized scene reload RPC so both machines jump at once [0.1]
+		if multiplayer.is_server():
+			# Call the dedicated match scene reloader RPC globally across the network wire
+			rpc("change_match_scene", "res://CombatArena.tscn")
+
+# --- 🔌 THE HOST-CONTROLLED SYNCHRONIZED SCENE RE-LOADER RPC ---
+@rpc("any_peer", "call_local", "reliable")
+func change_match_scene(scene_path: String) -> void:
+	print("🔌 Network Sync: Wiping session data and loading brand new network-tracked nodes on disk.")
+	get_tree().change_scene_to_file(scene_path)
 
 # --- THE HIGH-LEVEL NETWORK MATCH RELOADER RPC ---
 @rpc("any_peer", "call_local", "reliable")
 func sync_online_match_reload() -> void:
 	print("🔌 Network Sync: Reloading fresh instance of CombatArena.tscn on this machine...")
 	get_tree().change_scene_to_file("res://CombatArena.tscn")
-
 
 func _on_peer_disconnected(id: int) -> void:
 	print("🚨 Peer client disconnected from lab row socket: ", id)
