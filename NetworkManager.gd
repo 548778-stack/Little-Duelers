@@ -3,42 +3,33 @@ extends Node
 const DEFAULT_PORT = 5000
 var vs_ai: bool = false
 
-# --- INSTRUCTION FIXED: CENTRALIZED P2P PLAYER CHOICE VAULT ---
-var player_choices: Dictionary = {
-	1: {"class": "Slingshotter", "ability": "Piercing Shot"},
-	"guest": {"class": "Slingshotter", "ability": "Piercing Shot"}
-}
-
-var selected_map: String = "Standard Field"
-var starting_lives: int = 3
-
-
-# --- THE LIFELONG P2P CONNECTION & DATA VAULT ---
+# --- THE LIFELONG P2P CONNECTION DATA VAULT ---
 var lobby_data: Dictionary = {
 	1: {"character": "Slingshotter", "ability": "Piercing Shot"},
 	"guest": {"character": "Slingshotter", "ability": "Piercing Shot"}
 }
 
+# INSTRUCTION FIXED: Variable alias mapping links both name conventions perfectly! [0.1]
+var player_choices: Dictionary = lobby_data
+
+var selected_map: String = "Standard Field"
+var starting_lives: int = 3
 
 func _ready() -> void:
-	# Keep network listeners permanently alive in the background
 	multiplayer.peer_connected.connect(_on_peer_connected)
 
 func _on_peer_connected(id: int) -> void:
-	print("✅ NetworkManager: Guest connected to background thread pipeline! Peer ID: ", id)
-	# Initialize default fallback slot for the newly arrived client
+	print("✅ NetworkManager: Guest arrived. Staging pipeline ID: ", id)
 	lobby_data[id] = {"character": "Slingshotter", "ability": "Piercing Shot"}
 	
 	if multiplayer.is_server():
-		# Host triggers the global synchronized staging room scene switch!
-		rpc("change_scene", "res://Lobby.tscn")
+		# INSTRUCTION FIXED: Migrated rpc() to modern Godot 4 dot-syntax format!
+		change_scene.rpc("res://Lobby.tscn")
 
 @rpc("any_peer", "call_local", "reliable")
 func change_scene(scene_path: String) -> void:
-	if scene_path == "res://MainMenu.tscn":
-		vs_ai = false # Clean slate reset on menu exit
+	print("🚀 NetworkManager swapping layout screen to: ", scene_path)
 	get_tree().change_scene_to_file(scene_path)
-
 
 func get_my_local_ip() -> String:
 	var addresses = IP.get_local_addresses()

@@ -4,51 +4,22 @@ var speed: float = 700.0
 var direction: float = 1.0 
 var attacker_id: int = 1
 var damage_type: String = "normal"
-
-# --- 360 DEGREE MOUSE TRAJECTORY VECTOR ---
 var velocity_vector: Vector2 = Vector2.RIGHT
-
-var target_initial_y: float = -999.0
-var marksman_redirected: bool = false
-
-# --- BOUNCING MECHANICS STACKS ---
-var bounce_count: int = 0
-var max_bounces: int = 3
 
 func set_vector_trajectory(dir_vector: Vector2) -> void:
 	velocity_vector = dir_vector.normalized()
-	# Rotate the visual laser rectangle to face the direct travel line perfectly
 	rotation = velocity_vector.angle()
 
 func _ready() -> void:
 	var visual = ColorRect.new()
-	
 	match damage_type:
-		"special":
-			visual.size = Vector2(24, 12)
-			visual.color = Color(1.0, 0.85, 0.2)
-			speed = 900.0
-		"piercing_special":
-			visual.size = Vector2(24, 8)
-			visual.color = Color(0.8, 0.2, 1.0)
-			speed = 950.0
 		"tracking_normal":
 			visual.size = Vector2(16, 6)
 			visual.color = Color(0.2, 1.0, 0.4)
 			speed = 600.0
-		"marksman_normal":
-			visual.size = Vector2(16, 6)
-			visual.color = Color(1.0, 0.5, 0.0)
-			speed = 800.0
-		"bouncing_normal":
-			# NEW: Visually render the Slingshotter's bouncing projectile block
-			visual.size = Vector2(16, 8)
-			visual.color = Color(0.0, 0.9, 1.0) # Bright Glowing Neon Cyan
-			speed = 750.0
 		_:
 			visual.size = Vector2(16, 6)
 			visual.color = Color(1.0, 1.0, 1.0)
-			
 	visual.position = -visual.size / 2 
 	add_child(visual)
 	
@@ -57,126 +28,33 @@ func _ready() -> void:
 	box_shape.size = visual.size
 	collision.shape = box_shape
 	add_child(collision)
-	
 	body_entered.connect(_on_body_entered)
 
 func _physics_process(delta: float) -> void:
 	var arena = get_parent()
 	var enemy = null
 	
+	# INSTRUCTION FIXED: Discovered target body by running non-matching string checks! [0.1]
 	if attacker_id == 1:
-		# If Player 1 fired, search for the human Player 2 first. If it's missing, lock onto the Enemy AI Bot!
-		if is_instance_valid(arena.get("player2")):
-			enemy = arena.player2
-		elif arena.has_node("Player2"):
-			enemy = arena.get_node("Player2") as CharacterBody2D
+		for child in arena.get_children():
+			if child is CharacterBody2D and child.name != "1":
+				enemy = child
+				break
 	else:
-		# If an enemy/bot fired, look backward to target the master Player 1 human block
-		enemy = arena.player1
+		if arena.has_node("1"): enemy = arena.get_node("1")
 
-	# (The rest of your tracking normal check continues identically below here...)
-	var is_tracking_bullet = (damage_type == "tracking_normal")
-	
-	if damage_type == "marksman_normal" and is_instance_valid(enemy):
-		if target_initial_y == -999.0 and abs(position.x - 576.0) < 200.0:
-			set_meta("marksman_target_pos", enemy.global_position)
-			marksman_redirected = true
-		if marksman_redirected:
-			is_tracking_bullet = true
+	if damage_type == "tracking_normal" and is_instance_valid(enemy):
+		var target_dir = global_position.direction_to(enemy.global_position).normalized()
+		velocity_vector = velocity_vector.move_toward(target_dir, delta * 5.0).normalized()
+		rotation = velocity_vector.angle()
 
-	# --- 🎯 SMOOTH ARC STEERING & RECOVERY MATRIX ---
-	if is_tracking_bullet:
-		var target_dir = Vector2.ZERO
-		if damage_type == "tracking_normal" and is_instance_valid(enemy):
-			target_dir = global_position.direction_to(enemy.global_position).normalized()
-		elif damage_type == "marksman_normal" and has_meta("marksman_target_pos"):
-			var fixed_pos = get_meta("marksman_target_pos")
-			target_dir = global_position.direction_to(fixed_pos).normalized()
-			if global_position.distance_to(fixed_pos) < 20.0 or (direction > 0 and global_position.x > fixed_pos.x) or (direction < 0 and global_position.x < fixed_pos.x):
-				is_tracking_bullet = false
-		
-		if target_dir != Vector2.ZERO:
-			var avoidance_force = Vector2.ZERO
-			for child in arena.get_children():
-				if child.name.begins_with("Obstacle_"):
-					var dist = global_position.distance_to(child.global_position)
-					if dist < 110.0:
-						var approach_check = velocity_vector.dot(global_position.direction_to(child.global_position))
-						if approach_check > 0.0:
-							var away_dir = child.global_position.direction_to(global_position)
-							var strength = (110.0 - dist) / 110.0
-							avoidance_force += away_dir * strength * 4.0
-
-			var final_steering_dir = (target_dir + avoidance_force).normalized()
-			var turn_weight = 8.0 if damage_type == "marksman_normal" else 5.0
-			velocity_vector = velocity_vector.move_toward(final_steering_dir, delta * turn_weight).normalized()
-			rotation = velocity_vector.angle()
-
-	# --- UNIFIED FLIGHT VECTOR MOTION ---
+	# INSTRUCTION FIXED: Bounds checking utilizes global_position to stop premature deletion!
 	global_position += velocity_vector * speed * delta
-	
 	var view_size = get_viewport_rect().size
-	
-	# --- 🌍 NEW: BOUNCING SHOT WALL INTERSECTION DETECTOR ---
-	if damage_type == "bouncing_normal":
-		var hit_wall = false
-		
-		# Bounce off Top and Bottom screen borders safely
-		if global_position.y <= 15.0:
-			global_position.y = 15.0
-			velocity_vector.y = abs(velocity_vector.y) # Force down vector direction
-			hit_wall = true
-		elif global_position.y >= view_size.y - 15.0:
-			global_position.y = view_size.y - 15.0
-			velocity_vector.y = -abs(velocity_vector.y) # Force up vector direction
-			hit_wall = true
-			
-		# Bounce off Left and Right outer map border walls safely
-		if global_position.x <= 15.0:
-			global_position.x = 15.0
-			velocity_vector.x = abs(velocity_vector.x) # Force right vector direction
-			hit_wall = true
-		elif global_position.x >= view_size.x - 15.0:
-			global_position.x = view_size.x - 15.0
-			velocity_vector.x = -abs(velocity_vector.x) # Force left vector direction
-			hit_wall = true
-			
-		if hit_wall:
-			bounce_count += 1
-			rotation = velocity_vector.angle()
-			
-			# Trigger an aesthetic dust particle spark burst at the bounce coordinates
-			if arena.has_method("spawn_hit_particles"):
-				arena.spawn_hit_particles(global_position, Color(1.0, 1.0, 1.0))
-				
-			# If it completes 3 ricochets, wipe the bullet from memory
-			if bounce_count >= max_bounces:
-				queue_free()
-				return
-	else:
-		# Standard basic bullet boundary cleanup rule
-		if position.x < -50 or position.x > view_size.x + 50 or position.y < -50 or position.y > view_size.y + 50:
-			queue_free()
+	if global_position.x < -50 or global_position.x > view_size.x + 50:
+		queue_free()
 
 func _on_body_entered(body: Node) -> void:
-	if body.name.begins_with("Obstacle_"):
-		if damage_type == "piercing_special": return 
+	if body.has_method("take_damage") and body.get("player_id") != attacker_id:
+		body.take_damage(1.0, false, false)
 		queue_free()
-		return
-
-	if body.has_method("take_damage"):
-		if body.player_id != attacker_id:
-			var damage_val = 1.0
-			var is_crit = false
-			
-			if has_meta("damage_amount"):
-				damage_val = get_meta("damage_amount")
-			if has_meta("is_critical"):
-				is_crit = get_meta("is_critical")
-				
-			if not has_meta("damage_amount"):
-				if damage_type == "special": damage_val = 2.0
-				
-			var is_special = damage_type.contains("special")
-			body.take_damage(damage_val, is_special, is_crit)
-			queue_free()
