@@ -50,11 +50,15 @@ func _physics_process(delta: float) -> void:
 
 	# INSTRUCTION FIXED: Bounds checking utilizes global_position to stop premature deletion!
 	global_position += velocity_vector * speed * delta
+	# Only the host deletes bullets; the MultiplayerSpawner removes the guest's copy automatically.
+	if not multiplayer.is_server(): return
 	var view_size = get_viewport_rect().size
-	if global_position.x < -50 or global_position.x > view_size.x + 50:
+	if global_position.x < -50 or global_position.x > view_size.x + 50 or global_position.y < -50 or global_position.y > view_size.y + 50:
 		queue_free()
 
 func _on_body_entered(body: Node) -> void:
+	# Hits are only decided on the host, so damage isn't applied twice.
+	if not multiplayer.is_server(): return
 	if body.has_method("take_damage") and body.get("player_id") != attacker_id:
 		body.take_damage(1.0, false, false)
 		queue_free()
