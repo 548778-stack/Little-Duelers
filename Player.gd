@@ -1,3 +1,4 @@
+#perplexity
 #cd "S:\My Documents\little-duelers"
 #git add .
 #git commit -m "message"

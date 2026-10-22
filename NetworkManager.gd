@@ -28,6 +28,7 @@ signal all_peers_loaded
 var _loaded_peers: Dictionary = {}
 
 func _ready() -> void:
+	print("🟢 Little Duelers - perplexity online fix v1 loaded")
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
