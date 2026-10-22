@@ -13,99 +13,117 @@ var character_data: Dictionary = {
 }
 
 func _ready() -> void:
-	# INSTRUCTION FIXED: Split connections explicitly out from generic targets into your true team layout nodes!
-	_connect_lobby_button("P1Recon", func(): sync_lobby_selection.rpc(1, "class", "Recon"))
-	_connect_lobby_button("P1Slingshotter", func(): sync_lobby_selection.rpc(1, "class", "Slingshotter"))
-	_connect_lobby_button("P1Cowboy", func(): sync_lobby_selection.rpc(1, "class", "Cowboy"))
-	
-	# INSTRUCTION FIXED: Input guard lockout block checks NetworkManager.vs_ai state values! [0.1]
-	_connect_lobby_button("P2Recon", func():
-		if not NetworkManager.vs_ai and multiplayer.multiplayer_peer != null and multiplayer.is_server(): return
-		var target_id = 2 if NetworkManager.vs_ai else (multiplayer.get_unique_id() if multiplayer.multiplayer_peer != null else 2)
-		sync_lobby_selection.rpc(target_id, "class", "Recon")
-	)
-	_connect_lobby_button("P2Slingshotter", func():
-		if not NetworkManager.vs_ai and multiplayer.multiplayer_peer != null and multiplayer.is_server(): return
-		var target_id = 2 if NetworkManager.vs_ai else (multiplayer.get_unique_id() if multiplayer.multiplayer_peer != null else 2)
-		sync_lobby_selection.rpc(target_id, "class", "Slingshotter")
-	)
-	_connect_lobby_button("P2Cowboy", func():
-		if not NetworkManager.vs_ai and multiplayer.multiplayer_peer != null and multiplayer.is_server(): return
-		var target_id = 2 if NetworkManager.vs_ai else (multiplayer.get_unique_id() if multiplayer.multiplayer_peer != null else 2)
-		sync_lobby_selection.rpc(target_id, "class", "Cowboy")
-	)
-	
-	_connect_lobby_button("MapStandard", func(): sync_lobby_selection.rpc(1, "map", "Standard Field"))
-	_connect_lobby_button("MapChaos", func(): sync_lobby_selection.rpc(1, "map", "Obstacle Heavy Chaos"))
-	_connect_lobby_button("MapPlain", func(): sync_lobby_selection.rpc(1, "map", "Open Empty Plain"))
-	
-	_connect_lobby_button("Lives3", func(): sync_lobby_selection.rpc(1, "lives", "3"))
-	_connect_lobby_button("Lives5", func(): sync_lobby_selection.rpc(1, "lives", "5"))
-	_connect_lobby_button("Lives7", func(): sync_lobby_selection.rpc(1, "lives", "7"))
+	for class_name_str in ["Recon", "Slingshotter", "Cowboy"]:
+		var c = class_name_str
+		_connect_lobby_button("P1" + c, func(): _request_selection(1, "class", c))
+		_connect_lobby_button("P2" + c, func(): _request_selection(2, "class", c))
 
-	if multiplayer.multiplayer_peer != null and not multiplayer.is_server():
-		if start_match_button:
+	_connect_lobby_button("MapStandard", func(): _request_selection(0, "map", "Standard Field"))
+	_connect_lobby_button("MapChaos", func(): _request_selection(0, "map", "Obstacle Heavy Chaos"))
+	_connect_lobby_button("MapPlain", func(): _request_selection(0, "map", "Open Empty Plain"))
+
+	_connect_lobby_button("Lives3", func(): _request_selection(0, "lives", "3"))
+	_connect_lobby_button("Lives5", func(): _request_selection(0, "lives", "5"))
+	_connect_lobby_button("Lives7", func(): _request_selection(0, "lives", "7"))
+
+	if start_match_button:
+		# The .tscn already connects "pressed" -> _on_start_match_pressed, so don't connect twice.
+		if NetworkManager.is_online() and not multiplayer.is_server():
 			start_match_button.text = "WAITING FOR HOST..."
 			start_match_button.disabled = true
-	else:
-		if start_match_button and not start_match_button.pressed.is_connected(_on_start_match_pressed):
-			start_match_button.pressed.connect(_on_start_match_pressed)
 
-func update_abilities_ui(peer_id: int, character_name: String) -> void:
-	var target_container = p1_abilities_container if peer_id == 1 else p2_abilities_container
+	_refresh_ui_from_data()
+
+# --- WHO MAY CHANGE WHAT -----------------------------------------------------
+
+# Which side the local machine controls. Offline: both sides (couch / vs AI).
+func _can_edit_side(side: int) -> bool:
+	if not NetworkManager.is_online(): return true
+	if side == 1: return multiplayer.is_server()
+	return not multiplayer.is_server()
+
+func _can_edit_settings() -> bool:
+	return not NetworkManager.is_online() or multiplayer.is_server()
+
+func _request_selection(side: int, selection_type: String, value: String) -> void:
+	if selection_type == "class" or selection_type == "ability":
+		if not _can_edit_side(side): return
+	elif not _can_edit_settings():
+		return
+	sync_lobby_selection.rpc(side, selection_type, value)
+
+# --- SYNCED SELECTION --------------------------------------------------------
+
+@rpc("any_peer", "call_local", "reliable")
+func sync_lobby_selection(side: int, selection_type: String, value: String) -> void:
+	# Validate on the receiving end too, so a guest can't change the host's picks.
+	if NetworkManager.is_online():
+		var sender = multiplayer.get_remote_sender_id()
+		var allowed_sender = 1 if (side == 1 or selection_type == "map" or selection_type == "lives") else NetworkManager.guest_peer_id
+		if sender != allowed_sender: return
+
+	match selection_type:
+		"class":
+			if not character_data.has(value): return
+			NetworkManager.lobby_data[side]["character"] = value
+			NetworkManager.lobby_data[side]["ability"] = character_data[value]["abilities"][0]
+		"ability":
+			NetworkManager.lobby_data[side]["ability"] = value
+		"map":
+			NetworkManager.selected_map = value
+		"lives":
+			NetworkManager.starting_lives = value.to_int()
+	_refresh_ui_from_data()
+
+func _refresh_ui_from_data() -> void:
+	for side in [1, 2]:
+		var character = NetworkManager.lobby_data[side]["character"]
+		var label = p1_choice_label if side == 1 else p2_choice_label
+		if label: label.text = "P%d Class: %s" % [side, character]
+		var prefix = "P%d" % side
+		var color = Color(0.2, 0.6, 1.0) if side == 1 else Color(1.0, 0.3, 0.3)
+		_highlight_selected_button_group([prefix + "Recon", prefix + "Slingshotter", prefix + "Cowboy"], prefix + character, color)
+		update_abilities_ui(side, character)
+
+	var map_value = NetworkManager.selected_map
+	var target_btn = "MapStandard" if map_value == "Standard Field" else ("MapChaos" if map_value == "Obstacle Heavy Chaos" else "MapPlain")
+	_highlight_selected_button_group(["MapStandard", "MapChaos", "MapPlain"], target_btn, Color(0.2, 1.0, 0.5))
+	_highlight_selected_button_group(["Lives3", "Lives5", "Lives7"], "Lives" + str(NetworkManager.starting_lives), Color(0.2, 1.0, 0.5))
+
+func update_abilities_ui(side: int, character_name: String) -> void:
+	var target_container = p1_abilities_container if side == 1 else p2_abilities_container
 	if not target_container: return
 	for child in target_container.get_children(): child.queue_free()
-		
+
 	if character_data.has(character_name):
-		var abilities_array = character_data[character_name]["abilities"]
-		for ability_string in abilities_array:
+		var chosen = NetworkManager.lobby_data[side]["ability"]
+		for ability_string in character_data[character_name]["abilities"]:
 			var btn = Button.new()
 			btn.text = ability_string
 			btn.custom_minimum_size = Vector2(180, 35)
-			btn.pressed.connect(func(): sync_lobby_selection.rpc(peer_id, "ability", ability_string))
+			btn.disabled = not _can_edit_side(side)
+			if ability_string == chosen:
+				btn.self_modulate = Color(0.2, 1.0, 0.5)
+			var a = ability_string
+			btn.pressed.connect(func(): _request_selection(side, "ability", a))
 			target_container.add_child(btn)
 
-# INSTRUCTION FIXED: Wrapper declared with exact matching tag configuration properties!
-@rpc("any_peer", "call_local", "reliable")
-func sync_lobby_selection(peer_id: int, selection_type: String, value: String) -> void:
-	match selection_type:
-		"class":
-			var dict_key = peer_id if peer_id == 1 else "guest"
-			NetworkManager.lobby_data[dict_key]["character"] = value
-			NetworkManager.lobby_data[dict_key]["ability"] = character_data[value]["abilities"][0]
-			if NetworkManager.vs_ai and peer_id == 2:
-				NetworkManager.lobby_data[2] = {"character": value, "ability": character_data[value]["abilities"][0]}
-			
-			if peer_id == 1:
-				if p1_choice_label: p1_choice_label.text = "P1 Class: " + value
-				_highlight_selected_button_group(["P1Recon", "P1Slingshotter", "P1Cowboy"], "P1" + value, Color(0.2, 0.6, 1.0))
-			else:
-				if p2_choice_label: p2_choice_label.text = "P2 Class: " + value
-				_highlight_selected_button_group(["P2Recon", "P2Slingshotter", "P2Cowboy"], "P2" + value, Color(1.0, 0.3, 0.3))
-			update_abilities_ui(peer_id, value)
-		"ability":
-			var dict_key = peer_id if peer_id == 1 else "guest"
-			NetworkManager.lobby_data[dict_key]["ability"] = value
-		"map":
-			NetworkManager.selected_map = value
-			var target_btn = "MapStandard" if value == "Standard Field" else ("MapChaos" if value == "Obstacle Heavy Chaos" else "MapPlain")
-			_highlight_selected_button_group(["MapStandard", "MapChaos", "MapPlain"], target_btn, Color(0.2, 1.0, 0.5))
-		"lives":
-			NetworkManager.starting_lives = value.to_int()
-			_highlight_selected_button_group(["Lives3", "Lives5", "Lives7"], "Lives" + value, Color(0.2, 1.0, 0.5))
+# --- START MATCH -------------------------------------------------------------
 
 func _on_start_match_pressed() -> void:
-	if multiplayer.multiplayer_peer == null or multiplayer.is_server():
-		# INSTRUCTION FIXED: Modern dot-syntax RPC trigger sequence!
-		launch_combat_arena.rpc("res://CombatArena.tscn")
+	if not NetworkManager.is_online():
+		get_tree().change_scene_to_file("res://CombatArena.tscn")
+	elif multiplayer.is_server():
+		if multiplayer.get_peers().is_empty():
+			start_match_button.text = "NO OPPONENT CONNECTED"
+			return
+		NetworkManager.change_scene.rpc("res://CombatArena.tscn")
 
-@rpc("any_peer", "call_local", "reliable")
-func launch_combat_arena(scene_path: String) -> void:
-	get_tree().change_scene_to_file(scene_path)
+# --- UI HELPERS --------------------------------------------------------------
 
 func _connect_lobby_button(btn_name: String, callback: Callable) -> void:
 	var btn = find_child(btn_name, true, false) as Button
-	if btn and not btn.pressed.is_connected(callback): btn.pressed.connect(callback)
+	if btn: btn.pressed.connect(callback)
 
 func _highlight_selected_button_group(group_names: Array, chosen_name: String, highlight_color: Color) -> void:
 	for node_name in group_names:

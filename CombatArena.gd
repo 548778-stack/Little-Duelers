@@ -22,70 +22,112 @@ var p2_bars: Array[TextureProgressBar] = []
 
 const PLAYER_SCENE = preload("res://Player.tscn")
 
+const PROJECTILE_SCENE = preload("res://Projectile.tscn")
+const ENEMY_AI_SCRIPT = preload("res://EnemyAI.gd")
+
+@onready var spawner: MultiplayerSpawner = $MultiplayerSpawner
+
 func _ready() -> void:
-	# INSTRUCTION FIXED: Completely cleaned out all Git merge conflict markers (<<<<<<<, =======, >>>>>>>)! [1.4]
 	var screen_width = get_viewport_rect().size.x
 	var screen_height = get_viewport_rect().size.y
-	
+
+	# The MultiplayerSpawner builds every player and projectile on ALL machines
+	# using _build_spawned_node(), so each copy gets the right class/direction.
+	spawner.spawn_function = _build_spawned_node
+
 	var bg = ColorRect.new()
 	bg.name = "Background"
 	bg.size = Vector2(1152, 648)
 	bg.color = Color(0.08, 0.09, 0.12)
 	add_child(bg)
 	move_child(bg, 0)
-	
+
 	setup_hud(screen_width)
 	game_active = true
 	queue_redraw()
-	
+
 	selected_map = NetworkManager.selected_map
 	starting_lives_setting = NetworkManager.starting_lives
-	
+	vs_ai_mode = NetworkManager.vs_ai
+	p1_selected_character = NetworkManager.lobby_data[1]["character"]
+	p1_selected_skill = NetworkManager.lobby_data[1]["ability"]
+	p2_selected_character = NetworkManager.lobby_data[2]["character"]
+	p2_selected_skill = NetworkManager.lobby_data[2]["ability"]
+
 	if selected_map == "Open Empty Plain":
 		if has_node("Obstacles"): get_node("Obstacles").queue_free()
-	else:
-		if multiplayer.multiplayer_peer == null or multiplayer.is_server():
-			generate_map_obstacles(screen_width, screen_height, 3, 5)
-			
-	if multiplayer.multiplayer_peer == null or NetworkManager.vs_ai:
-		spawn_player(1, Vector2(120, screen_height / 2))
-		spawn_player(2, Vector2(screen_width - 120, screen_height / 2))
+	elif multiplayer.is_server():
+		generate_map_obstacles(screen_width, screen_height, 3, 5)
+
+	if not NetworkManager.is_online():
+		# Offline: just build both players locally.
+		add_child(_build_spawned_node(_player_spawn_data(1, 1, Vector2(120, screen_height / 2))), true)
+		add_child(_build_spawned_node(_player_spawn_data(2, 2, Vector2(screen_width - 120, screen_height / 2))), true)
 	else:
 		if multiplayer.is_server():
-			spawn_player(1, Vector2(120, screen_height / 2))
-			multiplayer.peer_connected.connect(func(id): spawn_player(id, Vector2(screen_width - 120, screen_height / 2)))
+			NetworkManager.all_peers_loaded.connect(_spawn_online_players, CONNECT_ONE_SHOT)
+		# Tell the host "my arena is loaded". The host spawns once both machines report in.
+		NetworkManager.report_scene_loaded.rpc_id(1)
 
-func spawn_player(peer_id: int, spawn_position: Vector2) -> void:
+func _spawn_online_players() -> void:
+	var screen_width = get_viewport_rect().size.x
+	var screen_height = get_viewport_rect().size.y
+	spawner.spawn(_player_spawn_data(1, 1, Vector2(120, screen_height / 2)))
+	spawner.spawn(_player_spawn_data(2, NetworkManager.guest_peer_id, Vector2(screen_width - 120, screen_height / 2)))
+
+func _player_spawn_data(side: int, peer_id: int, pos: Vector2) -> Dictionary:
+	var choices = NetworkManager.lobby_data[side]
+	return {
+		"kind": "player",
+		"side": side,
+		"peer_id": peer_id,
+		"character": choices["character"],
+		"ability": choices["ability"],
+		"lives": NetworkManager.starting_lives,
+		"pos": pos,
+	}
+
+# Called by the host (only the host may call spawn_projectile) to create a networked bullet.
+func spawn_projectile(type: String, pos: Vector2, dir: Vector2, attacker_id: int) -> void:
+	if not multiplayer.is_server(): return
+	var data = {"kind": "projectile", "type": type, "pos": pos, "dir": dir, "attacker": attacker_id}
+	if NetworkManager.is_online():
+		spawner.spawn(data)
+	else:
+		add_child(_build_spawned_node(data), true)
+
+# Runs on EVERY peer for each spawn. Must return a node that is NOT yet in the tree.
+func _build_spawned_node(data: Dictionary) -> Node:
+	if data["kind"] == "projectile":
+		var bullet = PROJECTILE_SCENE.instantiate()
+		bullet.attacker_id = data["attacker"]
+		bullet.damage_type = data["type"]
+		bullet.position = data["pos"]
+		bullet.set_vector_trajectory(data["dir"])
+		return bullet
+
+	var side: int = data["side"]
 	var player_instance = PLAYER_SCENE.instantiate()
-	player_instance.name = str(peer_id)
-	
-	if NetworkManager.vs_ai and peer_id == 2:
-		player_instance.set_script(preload("res://EnemyAI.gd"))
-	
-	var lookup_key = peer_id if NetworkManager.lobby_data.has(peer_id) else "guest"
-	if peer_id != 1 and NetworkManager.lobby_data.has(2): lookup_key = 2
-	
-	var choices = NetworkManager.lobby_data.get(lookup_key, {"character": "Slingshotter", "ability": "Piercing Shot"})
-	player_instance.character_class = choices["character"]
-	player_instance.selected_ability = choices["ability"]
-	player_instance.lives = NetworkManager.starting_lives
-	
-	if peer_id == 1: player1 = player_instance
+	# Node name = owning peer ID. BasePlayer._enter_tree() uses it to set authority,
+	# and it must be identical on both machines for RPCs to reach the right node.
+	player_instance.name = str(data["peer_id"])
+	if vs_ai_mode and side == 2 and not NetworkManager.is_online():
+		player_instance.set_script(ENEMY_AI_SCRIPT)
+	player_instance.character_class = data["character"]
+	player_instance.selected_ability = data["ability"]
+	player_instance.lives = data["lives"]
+	player_instance.position = data["pos"]
+	if side == 1: player1 = player_instance
 	else: player2 = player_instance
-		
-	add_child(player_instance, true)
-	player_instance.global_position = spawn_position
+	return player_instance
 
 func _process(delta: float) -> void:
 	if not game_active: return
 	
-	if player1 == null and has_node("1"): player1 = get_node("1")
-	if player2 == null:
-		# INSTRUCTION FIXED: Replaced static text lookups to search dynamic numeric peer strings! [0.1]
-		if has_node("2"): player2 = get_node("2")
-		elif multiplayer.multiplayer_peer != null:
-			for peer in multiplayer.get_peers():
-				if has_node(str(peer)): player2 = get_node(str(peer))
+	if not is_instance_valid(player1) and has_node("1"): player1 = get_node("1")
+	if not is_instance_valid(player2):
+		var p2_name = str(NetworkManager.guest_peer_id) if NetworkManager.is_online() else "2"
+		if has_node(p2_name): player2 = get_node(p2_name)
 
 	if is_instance_valid(player1):
 		var ammo_info = player1.get_ammo_string() if player1.has_method("get_ammo_string") else ""
@@ -166,26 +208,25 @@ func trigger_game_over(eliminated_player_id: int) -> void:
 	btn.text = "PLAY AGAIN"
 	btn.custom_minimum_size = Vector2(220, 50)
 	btn.pressed.connect(func(): _on_play_again_pressed())
+	if NetworkManager.is_online() and not multiplayer.is_server():
+		btn.text = "WAITING FOR HOST..."
+		btn.disabled = true
 	vbox.add_child(btn)
 
 func _on_play_again_pressed() -> void:
-	if multiplayer.multiplayer_peer == null or NetworkManager.vs_ai:
+	if not NetworkManager.is_online():
 		get_tree().change_scene_to_file("res://CombatArena.tscn")
-	else:
-		if multiplayer.is_server(): change_match_scene.rpc("res://CombatArena.tscn")
-
-@rpc("any_peer", "call_local", "reliable")
-func change_match_scene(scene_path: String) -> void:
-	get_tree().change_scene_to_file(scene_path)
+	elif multiplayer.is_server():
+		NetworkManager.change_scene.rpc("res://CombatArena.tscn")
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_R:
-		if multiplayer.multiplayer_peer != null and multiplayer.is_server():
-			change_match_scene.rpc("res://Lobby.tscn")
-		elif multiplayer.multiplayer_peer == null:
+		if not NetworkManager.is_online():
 			get_tree().change_scene_to_file("res://Lobby.tscn")
+		elif multiplayer.is_server():
+			NetworkManager.change_scene.rpc("res://Lobby.tscn")
 
-@rpc("any_peer", "call_remote", "reliable")
+@rpc("authority", "call_remote", "reliable")
 func spawn_local_obstacle(id: int, obs_position: Vector2, obs_size: Vector2) -> void:
 	var obstacle = StaticBody2D.new()
 	obstacle.name = "Obstacle_" + str(id)
@@ -227,31 +268,3 @@ func spawn_hit_particles(hit_position: Vector2, particle_color: Color) -> void:
 	particles.initial_velocity_max = 200.0
 	particles.color = particle_color
 	get_tree().create_timer(0.5).timeout.connect(particles.queue_free)
-	
-
-
-
-# --- THE HIGH-LEVEL NETWORK MATCH RELOADER RPC ---
-@rpc("any_peer", "call_local", "reliable")
-func sync_online_match_reload(eliminated_id) -> void:
-	print("🔌 Network Sync: Reloading fresh instance of CombatArena.tscn on this machine...")
-	get_tree().change_scene_to_file("res://CombatArena.tscn")
-
-	var win_id = 2 if eliminated_id == 1 else 1
-	var lbl = Label.new()
-	lbl.text = "🏆 PLAYER " + str(win_id) + " WINS! 🏆\nPress 'R' to Restart"
-	lbl.add_theme_font_size_override("font_size", 36)
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var center = CenterContainer.new()
-	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
-	center.add_child(lbl)
-
-
-func _on_peer_disconnected(id: int) -> void:
-	print("🚨 Peer client disconnected from lab row socket: ", id)
-	game_active = false
-	if multiplayer.multiplayer_peer != null:
-		multiplayer.multiplayer_peer.close()
-		multiplayer.multiplayer_peer = null
-	get_tree().reload_current_scene()
