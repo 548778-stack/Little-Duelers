@@ -24,7 +24,7 @@ var p2_bars: Array[TextureProgressBar] = []
 const PLAYER_SCENE = preload("res://Player.tscn")
 
 const PROJECTILE_SCENE = preload("res://Projectile.tscn")
-const ENEMY_AI_SCRIPT = preload("res://EnemyAI.gd")
+const ENEMY_BOT_SCENE = preload("res://EnemyBot.tscn")
 
 @onready var spawner: MultiplayerSpawner = $MultiplayerSpawner
 
@@ -40,8 +40,11 @@ func _ready() -> void:
 	bg.name = "Background"
 	bg.size = Vector2(1152, 648)
 	bg.color = Color(0.08, 0.09, 0.12)
+	bg.show_behind_parent = true  # so the center lines from _draw() show on top
 	add_child(bg)
 	move_child(bg, 0)
+	var scene_bg = get_node_or_null("Background")
+	if scene_bg and scene_bg != bg: scene_bg.show_behind_parent = true
 
 	setup_hud(screen_width)
 	game_active = true
@@ -88,7 +91,7 @@ func _player_spawn_data(side: int, peer_id: int, pos: Vector2) -> Dictionary:
 
 # Called by the host (only the host may call spawn_projectile) to create a networked bullet.
 func spawn_projectile(type: String, pos: Vector2, dir: Vector2, attacker_id: int, damage: float = 1.0, is_crit: bool = false) -> void:
-	if not multiplayer.is_server(): return
+	if not multiplayer.is_server() or not game_active: return
 	var data = {"kind": "projectile", "type": type, "pos": pos, "dir": dir, "attacker": attacker_id, "damage": damage, "crit": is_crit}
 	if NetworkManager.is_online():
 		spawner.spawn(data)
@@ -108,12 +111,11 @@ func _build_spawned_node(data: Dictionary) -> Node:
 		return bullet
 
 	var side: int = data["side"]
-	var player_instance = PLAYER_SCENE.instantiate()
+	var use_bot = vs_ai_mode and side == 2 and not NetworkManager.is_online()
+	var player_instance = ENEMY_BOT_SCENE.instantiate() if use_bot else PLAYER_SCENE.instantiate()
 	# Node name = owning peer ID. BasePlayer._enter_tree() uses it to set authority,
 	# and it must be identical on both machines for RPCs to reach the right node.
 	player_instance.name = str(data["peer_id"])
-	if vs_ai_mode and side == 2 and not NetworkManager.is_online():
-		player_instance.set_script(ENEMY_AI_SCRIPT)
 	player_instance.character_class = data["character"]
 	player_instance.selected_ability = data["ability"]
 	player_instance.lives = data["lives"]
@@ -134,7 +136,7 @@ func _process(_delta: float) -> void:
 		var ammo_info = player1.get_ammo_string() if player1.has_method("get_ammo_string") else ""
 		var skill_info = player1.get_ability_status_string() if player1.has_method("get_ability_status_string") else ""
 		p1_hud_label.text = "  💙 P1 Lives: " + str(player1.lives) + " | HP: " + str(snappedf(player1.current_health, 0.1)) + "/" + str(player1.max_health) + ammo_info + skill_info
-		p1_ability_bar.value = clampf(player1.local_ability_timer / active_ability_cooldown_time, 0.0, 1.0) * 100.0
+		if player1.has_method("get_ability_cooldown_percentage"): p1_ability_bar.value = player1.get_ability_cooldown_percentage() * 100.0
 		if player1.has_method("get_individual_bar_progress"):
 			for i in range(3): p1_bars[i].value = player1.get_individual_bar_progress(i) * 100.0
 
@@ -142,8 +144,7 @@ func _process(_delta: float) -> void:
 		var ammo_info = player2.get_ammo_string() if player2.has_method("get_ammo_string") else ""
 		var skill_info = player2.get_ability_status_string() if player2.has_method("get_ability_status_string") else ""
 		p2_hud_label.text = skill_info + ammo_info + " | P2 Lives: " + str(player2.lives) + " | HP: " + str(snappedf(player2.current_health, 0.1)) + "/" + str(player2.max_health) + " ❤️  "
-		var p2_timer = player2.get("local_ability_timer")
-		if p2_timer != null: p2_ability_bar.value = clampf(p2_timer / active_ability_cooldown_time, 0.0, 1.0) * 100.0
+		if player2.has_method("get_ability_cooldown_percentage"): p2_ability_bar.value = player2.get_ability_cooldown_percentage() * 100.0
 		if player2.has_method("get_individual_bar_progress"):
 			for i in range(3): p2_bars[i].value = player2.get_individual_bar_progress(i) * 100.0
 
@@ -248,7 +249,8 @@ func _build_hud_column(parent: Control, tex: Texture2D, right_side: bool, color:
 	var ability_bar = TextureProgressBar.new()
 	ability_bar.custom_minimum_size = Vector2(162, 6)
 	ability_bar.nine_patch_stretch = true
-	if right_side: ability_bar.size_flags_horizontal = Control.SIZE_SHRINK_END
+	# Without SHRINK, the bar stretches across half the screen and overlaps the obstacles.
+	ability_bar.size_flags_horizontal = Control.SIZE_SHRINK_END if right_side else Control.SIZE_SHRINK_BEGIN
 	ability_bar.texture_progress = tex
 	ability_bar.tint_progress = Color(0.2, 1.0, 0.5)
 	vbox.add_child(ability_bar)

@@ -299,11 +299,6 @@ func execute_ability() -> void:
 			is_reloading = false
 
 func local_spawn_projectile(type: String, start_pos: Vector2, fire_dir: Vector2, spread_offset: float) -> void:
-	var bullet = Area2D.new()
-	bullet.set_script(preload("res://Projectile.gd"))
-	bullet.attacker_id = player_id
-	bullet.damage_type = type
-	
 	var base_damage = 1.0
 	var crit_chance = 0.15
 	if character_class == "Cowboy":
@@ -314,15 +309,11 @@ func local_spawn_projectile(type: String, start_pos: Vector2, fire_dir: Vector2,
 		
 	var rolled_crit = randf() < crit_chance
 	if rolled_crit: base_damage *= 2.0
-		
-	bullet.set_meta("damage_amount", base_damage)
-	bullet.set_meta("is_critical", rolled_crit)
-	
-	get_parent().add_child(bullet)
-	bullet.global_position = start_pos + (fire_dir * 45.0) + Vector2(0, spread_offset)
-	
-	if bullet.has_method("set_vector_trajectory"):
-		bullet.set_vector_trajectory(fire_dir)
+
+	# Spawn through the arena (same path as players) so the bullet gets the right damage.
+	var arena = get_parent()
+	if arena.has_method("spawn_projectile"):
+		arena.spawn_projectile(type, start_pos + (fire_dir.normalized() * 45.0) + Vector2(0, spread_offset), fire_dir, player_id, base_damage, rolled_crit)
 
 func take_damage(amount: float, is_special_hit: bool, is_crit_hit: bool = false) -> void:
 	if lives <= 0: return
@@ -334,7 +325,7 @@ func take_damage(amount: float, is_special_hit: bool, is_crit_hit: bool = false)
 	var particle_color = Color(1.0, 0.85, 0.2) if is_crit_hit else Color(1.0, 0.3, 0.3)
 	get_parent().spawn_hit_particles(global_position, particle_color)
 	
-	if current_health <= 0.0: lose_life()
+	if current_health <= 0.001: lose_life()
 
 func lose_life() -> void:
 	lives -= 1

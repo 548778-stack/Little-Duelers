@@ -40,4 +40,5 @@ func _on_join_button_pressed() -> void:
 
 func _on_offline_button_pressed() -> void:
 	NetworkManager.close_connection()
+	NetworkManager.vs_ai = true  # offline = you vs the EnemyAI bot
 	get_tree().change_scene_to_file("res://Lobby.tscn")
