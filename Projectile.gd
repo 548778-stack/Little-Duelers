@@ -17,6 +17,11 @@ var marksman_target_pos: Vector2 = Vector2.ZERO
 var bounce_count: int = 0
 var max_bounces: int = 3
 
+# Recons Eye (tracking) bullets vanish after this many seconds
+const TRACKING_LIFETIME: float = 3.0
+const FADE_TIME: float = 0.5
+var age: float = 0.0
+
 func set_vector_trajectory(dir_vector: Vector2) -> void:
 	velocity_vector = dir_vector.normalized()
 	rotation = velocity_vector.angle()
@@ -67,6 +72,15 @@ func _physics_process(delta: float) -> void:
 	var arena = get_parent()
 	var is_server = multiplayer.is_server()
 	var enemy = _get_enemy()
+
+	# --- Recons Eye lifetime: fade out over the last 0.5 s, then the host removes it ---
+	if damage_type == "tracking_normal":
+		age += delta
+		if age > TRACKING_LIFETIME - FADE_TIME:
+			modulate.a = clampf((TRACKING_LIFETIME - age) / FADE_TIME, 0.0, 1.0)
+		if age >= TRACKING_LIFETIME:
+			if is_server: queue_free()
+			return
 
 	# --- Steering (tracking + marksman), host only; the guest receives the result ---
 	if is_server:

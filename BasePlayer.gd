@@ -66,6 +66,106 @@ func _ready() -> void:
 		player_id = 2
 		if has_node("ColorRect"): $ColorRect.color = Color(1.0, 0.3, 0.3)
 
+# --- BOUNCING SHOT AIM PREVIEW (only drawn on the shooter's own screen) ---
+const BOUNCE_MARGIN: float = 15.0      # must match the wall margin in Projectile.gd
+const BOUNCE_COUNT: int = 3            # must match max_bounces in Projectile.gd
+var bounce_preview: Line2D = null
+
+func _process(_delta: float) -> void:
+	_update_bounce_preview()
+
+func _update_bounce_preview() -> void:
+	var show = selected_ability == "Bouncing Shot" and _is_locally_controlled() and _arena_active()
+	if show:
+		var arena = get_parent()
+		show = local_ability_timer >= arena.active_ability_cooldown_time
+	if not show:
+		if bounce_preview: bounce_preview.visible = false
+		return
+
+	if bounce_preview == null:
+		bounce_preview = Line2D.new()
+		bounce_preview.top_level = true          # draw in world coordinates, not relative to the player
+		bounce_preview.width = 2.0
+		bounce_preview.default_color = Color(0.0, 0.9, 1.0, 0.45)
+		bounce_preview.z_index = 5
+		add_child(bounce_preview)
+	bounce_preview.visible = true
+	bounce_preview.global_position = Vector2.ZERO
+	bounce_preview.points = _predict_bounce_path(global_position.direction_to(get_global_mouse_position()))
+
+# Traces the same path Projectile.gd will fly: off the screen edges up to 3 times,
+# stopping early if it would hit an obstacle (non-piercing bullets break on walls).
+func _predict_bounce_path(dir: Vector2) -> PackedVector2Array:
+	var view = get_viewport_rect().size
+	var lo = Vector2(BOUNCE_MARGIN, BOUNCE_MARGIN)
+	var hi = view - lo
+	var pos = global_position + dir.normalized() * 45.0
+	var d = dir.normalized()
+	var points = PackedVector2Array([pos])
+	if d == Vector2.ZERO: return points
+
+	var obstacles: Array[Rect2] = []
+	for child in get_parent().get_children():
+		if String(child.name).begins_with("Obstacle_"):
+			var shape_node = child.get_node_or_null("CollisionShape2D")
+			if shape_node == null:
+				for c in child.get_children():
+					if c is CollisionShape2D: shape_node = c
+			if shape_node and shape_node.shape is RectangleShape2D:
+				var sz = shape_node.shape.size
+				obstacles.append(Rect2(child.global_position - sz / 2.0, sz))
+
+	# The bullet breaks on its 3rd wall hit, so the line ends at the 3rd wall.
+	for i in range(BOUNCE_COUNT):
+		# Distance to the next screen edge
+		var tx = INF
+		var ty = INF
+		if d.x > 0.0: tx = (hi.x - pos.x) / d.x
+		elif d.x < 0.0: tx = (lo.x - pos.x) / d.x
+		if d.y > 0.0: ty = (hi.y - pos.y) / d.y
+		elif d.y < 0.0: ty = (lo.y - pos.y) / d.y
+		var t = max(0.0, min(tx, ty))
+		var next = pos + d * t
+
+		# Stop at the first obstacle in the way
+		var hit_t = INF
+		for r in obstacles:
+			var rt = _segment_rect_hit(pos, next, r.grow(4.0))
+			if rt >= 0.0 and rt < hit_t: hit_t = rt
+		if hit_t != INF:
+			points.append(pos.lerp(next, hit_t))
+			return points
+
+		points.append(next)
+		if i == BOUNCE_COUNT - 1: break
+		if tx <= ty: d.x = -d.x
+		if ty <= tx: d.y = -d.y
+		pos = next
+	return points
+
+# Returns 0..1 along segment a->b where it first enters rect r, or -1 if it misses.
+func _segment_rect_hit(a: Vector2, b: Vector2, r: Rect2) -> float:
+	var d = b - a
+	var t_min = 0.0
+	var t_max = 1.0
+	for axis in [0, 1]:
+		var p = a[axis]
+		var v = d[axis]
+		var mn = r.position[axis]
+		var mx = r.position[axis] + r.size[axis]
+		if abs(v) < 0.00001:
+			if p < mn or p > mx: return -1.0
+		else:
+			var t1 = (mn - p) / v
+			var t2 = (mx - p) / v
+			if t1 > t2:
+				var tmp = t1; t1 = t2; t2 = tmp
+			t_min = max(t_min, t1)
+			t_max = min(t_max, t2)
+			if t_min > t_max: return -1.0
+	return t_min
+
 func _arena_active() -> bool:
 	var arena = get_parent()
 	return is_instance_valid(arena) and arena.get("game_active") == true
@@ -146,6 +246,8 @@ func _input(event: InputEvent) -> void:
 				_fire("piercing_special", fire_direction)
 			"Marksman":
 				_fire("marksman_normal", fire_direction)
+			"Bouncing Shot":
+				_fire("bouncing_normal", fire_direction)
 			_:
 				_fire("bouncing_normal", fire_direction)
 		local_ability_timer = 0.0
