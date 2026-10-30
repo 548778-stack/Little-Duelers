@@ -59,21 +59,38 @@ func sync_lobby_selection(side: int, selection_type: String, value: String) -> v
 	# Validate on the receiving end too, so a guest can't change the host's picks.
 	if NetworkManager.is_online():
 		var sender = multiplayer.get_remote_sender_id()
-		var allowed_sender = 1 if (side == 1 or selection_type == "map" or selection_type == "lives") else NetworkManager.guest_peer_id
+		
+		# FIXED: Removed the deleted 'guest_peer_id' reference! 
+		# If the side being edited is 1, or it's a global map/lives change, only the host (ID 1) is allowed.
+		# Otherwise, the sender MUST be the person who owns that specific player profile slot.
+		var allowed_sender = 1 if (side == 1 or selection_type == "map" or selection_type == "lives") else sender
 		if sender != allowed_sender: return
 
 	match selection_type:
 		"class":
 			if not character_data.has(value): return
-			NetworkManager.lobby_data[side]["character"] = value
-			NetworkManager.lobby_data[side]["ability"] = character_data[value]["abilities"][0]
+			
+			# Find the true network dictionary slot belonging to this specific sender
+			var target_key = 1 if side == 1 else multiplayer.get_remote_sender_id()
+			if not NetworkManager.is_online():
+				target_key = side # Offline fallback for host vs bot
+				
+			if NetworkManager.lobby_data.has(target_key):
+				NetworkManager.lobby_data[target_key]["character"] = value
+				# Automatically reset their selected ability to the first skill of that new class
+				NetworkManager.lobby_data[target_key]["ability"] = character_data[value]["abilities"][0]
 		"ability":
-			NetworkManager.lobby_data[side]["ability"] = value
+			var target_key = 1 if side == 1 else multiplayer.get_remote_sender_id()
+			if not NetworkManager.is_online(): target_key = side
+			if NetworkManager.lobby_data.has(target_key):
+				NetworkManager.lobby_data[target_key]["ability"] = value
 		"map":
 			NetworkManager.selected_map = value
 		"lives":
 			NetworkManager.starting_lives = value.to_int()
+			
 	_refresh_ui_from_data()
+
 
 func _refresh_ui_from_data() -> void:
 	# FIXED: Ensure we look up standard slots (1 and 2) or any connected client peers safely
