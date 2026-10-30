@@ -61,8 +61,8 @@ func _ready() -> void:
 	if not NetworkManager.is_online():
 		_build_obstacles(_generate_obstacle_list(screen_width, screen_height))
 		# Offline: just build both players locally.
-		add_child(_build_spawned_node(_player_spawn_data(1, 1, Vector2(120, screen_height / 2))), true)
-		add_child(_build_spawned_node(_player_spawn_data(2, 2, Vector2(screen_width - 120, screen_height / 2))), true)
+		add_child(_build_spawned_node(_player_spawn_data(1, 1, Vector2(150.0, 1944.0 / 2.0))), true)
+		add_child(_build_spawned_node(_player_spawn_data(2, 2, Vector2(3456.0 - 150.0, 1944.0 / 2.0))), true)
 	else:
 		if multiplayer.is_server():
 			NetworkManager.all_peers_loaded.connect(_spawn_online_players, CONNECT_ONE_SHOT)
@@ -70,12 +70,26 @@ func _ready() -> void:
 		NetworkManager.report_scene_loaded.rpc_id(1)
 
 func _spawn_online_players() -> void:
-	var screen_width = get_viewport_rect().size.x
-	var screen_height = get_viewport_rect().size.y
-	# The host rolls the random obstacles once and sends the same list to both machines.
-	_build_obstacles.rpc(_generate_obstacle_list(screen_width, screen_height))
-	spawner.spawn(_player_spawn_data(1, 1, Vector2(120, screen_height / 2)))
-	spawner.spawn(_player_spawn_data(2, NetworkManager.guest_peer_id, Vector2(screen_width - 120, screen_height / 2)))
+	# Defined spawn points spanning the true four corners of the 3456x1944 layout
+	var spawn_points = [
+		Vector2(150.0, 150.0),                  # Corner 1: Top Left
+		Vector2(3456.0 - 150.0, 1944.0 - 150.0), # Corner 2: Bottom Right (Opposite P1)
+		Vector2(3456.0 - 150.0, 150.0),          # Corner 3: Top Right
+		Vector2(150.0, 1944.0 - 150.0)           # Corner 4: Bottom Left (Opposite P3)
+	]
+	
+	_build_obstacles.rpc(_generate_obstacle_list(3456.0, 1944.0))
+	
+	# Loop through all currently connected peer keys inside the lobby data configuration
+	var connected_peers = NetworkManager.lobby_data.keys()
+	for i in range(connected_peers.size()):
+		if i >= spawn_points.size(): break # Safeguard cap at 4 players max
+		
+		var current_peer_id = connected_peers[i]
+		var target_spawn_pos = spawn_points[i]
+		
+		# Route the configuration array down into the network spawner engine
+		spawner.spawn(_player_spawn_data(i + 1, current_peer_id, target_spawn_pos))
 
 func _player_spawn_data(side: int, peer_id: int, pos: Vector2) -> Dictionary:
 	var choices = NetworkManager.lobby_data[side]
@@ -149,31 +163,40 @@ func _process(_delta: float) -> void:
 			for i in range(3): p2_bars[i].value = player2.get_individual_bar_progress(i) * 100.0
 
 func _draw() -> void:
-	var screen_width = get_viewport_rect().size.x
-	var screen_height = get_viewport_rect().size.y
-	draw_line(Vector2(screen_width / 2.0, 0), Vector2(screen_width / 2.0, screen_height), Color(0.25, 0.28, 0.35, 0.6), 4.0)
-	draw_line(Vector2(0, screen_height / 2.0), Vector2(screen_width, screen_height / 2.0), Color(0.25, 0.28, 0.35, 0.6), 4.0)
-
+	# Completely empty or removed line drawing to clear the screen area for free movement
+	pass
 # --- OBSTACLES -----------------------------------------------------------------
 
 # Host only: roll random obstacle positions/sizes. Returns an Array of [position, size].
 func _generate_obstacle_list(screen_width: float, screen_height: float) -> Array:
 	var list: Array = []
 	if selected_map == "Open Empty Plain": return list
-	var min_c = 3
-	var max_c = 5
+	
+	var min_c = 12  # Increased count since the map canvas is 9x larger total area!
+	var max_c = 18
 	if selected_map == "Obstacle Heavy Chaos":
-		min_c = 6
-		max_c = 9
-	var center_x = screen_width / 2.0
+		min_c = 22
+		max_c = 32
+		
 	var count = randi_range(min_c, max_c)
-	var sector_height = screen_height / count
+	
+	# Divide the massive 3456x1944 map canvas into grid sectors to prevent clustering anomalies
 	for i in range(count):
-		if randf() > 0.7: continue
-		var rand_y = (i * sector_height) + randf_range(40.0, max(41.0, sector_height - 40.0))
-		var pos = Vector2(center_x + randf_range(-50.0, 50.0), rand_y)
-		var obs_size = Vector2(randf_range(30.0, 60.0), randf_range(50.0, 110.0))
+		# Roll random coordinates across the absolute limits of your 3456 x 1944 map background
+		var rand_x = randf_range(150.0, 3456.0 - 150.0)
+		var rand_y = randf_range(150.0, 1944.0 - 150.0)
+		
+		# Prevent spawning an obstacle directly on top of the initial player spawn zones!
+		var spawn_zone_p1 = Vector2(120, 1944.0 / 2.0)
+		var spawn_zone_p2 = Vector2(3456.0 - 120, 1944.0 / 2.0)
+		var pos = Vector2(rand_x, rand_y)
+		
+		if pos.distance_to(spawn_zone_p1) < 250.0 or pos.distance_to(spawn_zone_p2) < 250.0:
+			continue # Skip this loop step so players don't spawn trapped inside a block!
+			
+		var obs_size = Vector2(randf_range(50.0, 120.0), randf_range(50.0, 120.0))
 		list.append([pos, obs_size])
+		
 	return list
 
 # Builds the same obstacles on every machine (host sends the list).

@@ -65,6 +65,24 @@ func _ready() -> void:
 	else:
 		player_id = 2
 		if has_node("ColorRect"): $ColorRect.color = Color(1.0, 0.3, 0.3)
+		
+	# --- 🎥 INDEPENDENT CAMERA TRACKING SYSTEM ---
+	# Only spawn and activate the camera node if this specific machine controls this character!
+	if _is_locally_controlled():
+		var player_camera = Camera2D.new()
+		player_camera.name = "PlayerCamera"
+		player_camera.enabled = true
+		player_camera.position_smoothing_enabled = true
+		player_camera.position_smoothing_speed = 8.0
+		
+		# Set limits so the camera stops panning when you reach the edge of the 3456x1944 map
+		player_camera.limit_left = 0
+		player_camera.limit_top = 0
+		player_camera.limit_right = 3456
+		player_camera.limit_bottom = 1944
+		
+		add_child(player_camera)
+		print("🎥 Camera System: Bound independent camera tracking to local Player node: ", name)
 
 # --- BOUNCING SHOT AIM PREVIEW (only drawn on the shooter's own screen) ---
 const BOUNCE_MARGIN: float = 15.0      # must match the wall margin in Projectile.gd
@@ -195,11 +213,9 @@ func _physics_process(delta: float) -> void:
 	velocity = direction * speed
 	move_and_slide()
 
-	var view_size = get_viewport_rect().size
-	var mid_x = view_size.x / 2.0
-	position.y = clampf(position.y, 40.0, view_size.y - 40.0)
-	if name == "1" or name == "Player1": position.x = clampf(position.x, 40.0, mid_x - 30.0)
-	else: position.x = clampf(position.x, mid_x + 30.0, view_size.x - 40.0)
+	position.x = clampf(position.x, 40.0, 3456.0 - 40.0)
+	position.y = clampf(position.y, 40.0, 1944.0 - 40.0)
+
 
 func _input(event: InputEvent) -> void:
 	if not _is_locally_controlled(): return

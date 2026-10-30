@@ -76,15 +76,36 @@ func sync_lobby_selection(side: int, selection_type: String, value: String) -> v
 	_refresh_ui_from_data()
 
 func _refresh_ui_from_data() -> void:
-	for side in [1, 2]:
-		var character = NetworkManager.lobby_data[side]["character"]
-		var label = p1_choice_label if side == 1 else p2_choice_label
-		if label: label.text = "P%d Class: %s" % [side, character]
-		var prefix = "P%d" % side
-		var color = Color(0.2, 0.6, 1.0) if side == 1 else Color(1.0, 0.3, 0.3)
-		_highlight_selected_button_group([prefix + "Recon", prefix + "Slingshotter", prefix + "Cowboy"], prefix + character, color)
-		update_abilities_ui(side, character)
+	# FIXED: Ensure we look up standard slots (1 and 2) or any connected client peers safely
+	var active_keys = NetworkManager.lobby_data.keys()
+	
+	for peer_id in active_keys:
+		# Convert string keys from RPC packets to integers safely if needed
+		var lookup_key = int(peer_id) if str(peer_id).is_valid_int() else peer_id
+		if not NetworkManager.lobby_data.has(lookup_key): continue
+		
+		var character = NetworkManager.lobby_data[lookup_key]["character"]
+		var team_id = NetworkManager.lobby_data[lookup_key].get("team", 1)
+		
+		var player_num = 1
+		if str(lookup_key) == "1": player_num = 1
+		elif str(lookup_key) == "2" or str(lookup_key) == "guest": player_num = 2
+		else: player_num = active_keys.find(peer_id) + 1
+			
+		var label = find_child("P%dChoiceLabel" % player_num, true, false) as Label
+		if label: 
+			label.text = "P%d Class: %s (Team %d)" % [player_num, character, team_id]
+			
+		var prefix = "P%d" % player_num
+		var highlight_color = Color(0.2, 0.6, 1.0) if team_id == 1 else Color(1.0, 0.3, 0.3)
+		_highlight_selected_button_group(
+			[prefix + "Recon", prefix + "Slingshotter", prefix + "Cowboy"], 
+			prefix + character, 
+			highlight_color
+		)
+		update_abilities_ui(player_num, character)
 
+	# Safely refresh map and stock life buttons globally
 	var map_value = NetworkManager.selected_map
 	var target_btn = "MapStandard" if map_value == "Standard Field" else ("MapChaos" if map_value == "Obstacle Heavy Chaos" else "MapPlain")
 	_highlight_selected_button_group(["MapStandard", "MapChaos", "MapPlain"], target_btn, Color(0.2, 1.0, 0.5))

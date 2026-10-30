@@ -40,5 +40,9 @@ func _on_join_button_pressed() -> void:
 
 func _on_offline_button_pressed() -> void:
 	NetworkManager.close_connection()
-	NetworkManager.vs_ai = true  # offline = you vs the EnemyAI bot
+	NetworkManager.vs_ai = true  # Turn on the offline vs bot flag
+	
+	# FIXED: Enforce that the Bot configuration exists inside the manager arrays before loading the Lobby!
+	NetworkManager._reset_local_lobby_slots()
+	
 	get_tree().change_scene_to_file("res://Lobby.tscn")

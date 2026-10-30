@@ -147,7 +147,7 @@ func _physics_process(delta: float) -> void:
 		return
 
 	# Only the host deletes bullets; the MultiplayerSpawner removes the guest's copy automatically.
-	if is_server and (global_position.x < -50 or global_position.x > view_size.x + 50 or global_position.y < -50 or global_position.y > view_size.y + 50):
+	if is_server and (global_position.x < -50 or global_position.x > 3456.0 + 50 or global_position.y < -50 or global_position.y > 1944.0 + 50):
 		queue_free()
 
 func _on_body_entered(body: Node) -> void:
