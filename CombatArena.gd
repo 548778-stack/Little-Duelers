@@ -85,11 +85,14 @@ func _spawn_online_players() -> void:
 	for i in range(connected_peers.size()):
 		if i >= spawn_points.size(): break # Safeguard cap at 4 players max
 		
-		var current_peer_id = connected_peers[i]
+		# FIXED: Convert the peer ID to a hard integer type right here!
+		var raw_peer_id = connected_peers[i]
+		var current_peer_id: int = int(raw_peer_id) if str(raw_peer_id).is_valid_int() else 1
 		var target_spawn_pos = spawn_points[i]
 		
 		# Route the configuration array down into the network spawner engine
 		spawner.spawn(_player_spawn_data(i + 1, current_peer_id, target_spawn_pos))
+
 
 func _player_spawn_data(side: int, peer_id: int, pos: Vector2) -> Dictionary:
 	var choices = NetworkManager.lobby_data[side]

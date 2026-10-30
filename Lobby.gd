@@ -60,9 +60,7 @@ func sync_lobby_selection(side: int, selection_type: String, value: String) -> v
 	if NetworkManager.is_online():
 		var sender = multiplayer.get_remote_sender_id()
 		
-		# FIXED: Removed the deleted 'guest_peer_id' reference! 
-		# If the side being edited is 1, or it's a global map/lives change, only the host (ID 1) is allowed.
-		# Otherwise, the sender MUST be the person who owns that specific player profile slot.
+		# FIXED: Replaced 'NetworkManager.guest_peer_id' with the dynamic 'sender' value
 		var allowed_sender = 1 if (side == 1 or selection_type == "map" or selection_type == "lives") else sender
 		if sender != allowed_sender: return
 
@@ -70,14 +68,12 @@ func sync_lobby_selection(side: int, selection_type: String, value: String) -> v
 		"class":
 			if not character_data.has(value): return
 			
-			# Find the true network dictionary slot belonging to this specific sender
 			var target_key = 1 if side == 1 else multiplayer.get_remote_sender_id()
 			if not NetworkManager.is_online():
 				target_key = side # Offline fallback for host vs bot
 				
 			if NetworkManager.lobby_data.has(target_key):
 				NetworkManager.lobby_data[target_key]["character"] = value
-				# Automatically reset their selected ability to the first skill of that new class
 				NetworkManager.lobby_data[target_key]["ability"] = character_data[value]["abilities"][0]
 		"ability":
 			var target_key = 1 if side == 1 else multiplayer.get_remote_sender_id()
@@ -90,6 +86,7 @@ func sync_lobby_selection(side: int, selection_type: String, value: String) -> v
 			NetworkManager.starting_lives = value.to_int()
 			
 	_refresh_ui_from_data()
+
 
 
 func _refresh_ui_from_data() -> void:
