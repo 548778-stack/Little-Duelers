@@ -103,7 +103,7 @@ func _refresh_ui_from_data() -> void:
 			prefix + character, 
 			highlight_color
 		)
-		update_abilities_ui(player_num, character)
+		update_abilities_ui(player_num, lookup_key, character)
 
 	# Safely refresh map and stock life buttons globally
 	var map_value = NetworkManager.selected_map
@@ -111,23 +111,37 @@ func _refresh_ui_from_data() -> void:
 	_highlight_selected_button_group(["MapStandard", "MapChaos", "MapPlain"], target_btn, Color(0.2, 1.0, 0.5))
 	_highlight_selected_button_group(["Lives3", "Lives5", "Lives7"], "Lives" + str(NetworkManager.starting_lives), Color(0.2, 1.0, 0.5))
 
-func update_abilities_ui(side: int, character_name: String) -> void:
-	var target_container = p1_abilities_container if side == 1 else p2_abilities_container
+func update_abilities_ui(player_num: int, lookup_key: Variant, character_name: String) -> void:
+	# FIXED: Separate the visual player column (player_num) from the actual network lookup key!
+	var target_container = p1_abilities_container if player_num == 1 else p2_abilities_container
+	# If you add containers for Player 3 and 4 later, you can add them here:
+	if player_num == 3: target_container = find_child("P3AbilitiesContainer", true, false) as VBoxContainer
+	if player_num == 4: target_container = find_child("P4AbilitiesContainer", true, false) as VBoxContainer
+	
 	if not target_container: return
 	for child in target_container.get_children(): child.queue_free()
 
-	if character_data.has(character_name):
-		var chosen = NetworkManager.lobby_data[side]["ability"]
+	if character_data.has(character_name) and NetworkManager.lobby_data.has(lookup_key):
+		# FIXED: Safely read the ability using the dynamic network key (Peer ID or 1 or 2)
+		var chosen = NetworkManager.lobby_data[lookup_key]["ability"]
+		
 		for ability_string in character_data[character_name]["abilities"]:
 			var btn = Button.new()
 			btn.text = ability_string
 			btn.custom_minimum_size = Vector2(180, 35)
-			btn.disabled = not _can_edit_side(side)
+			
+			# UI visual feedback check:
+			var is_p1 = (player_num == 1)
+			btn.disabled = not _can_edit_side(1 if is_p1 else 2) # simplified side lock out
+			
 			if ability_string == chosen:
 				btn.self_modulate = Color(0.2, 1.0, 0.5)
+				
 			var a = ability_string
-			btn.pressed.connect(func(): _request_selection(side, "ability", a))
+			# Route selection through the correct true network lookup key side identity
+			btn.pressed.connect(func(): _request_selection(1 if is_p1 else 2, "ability", a))
 			target_container.add_child(btn)
+
 
 # --- START MATCH -------------------------------------------------------------
 
